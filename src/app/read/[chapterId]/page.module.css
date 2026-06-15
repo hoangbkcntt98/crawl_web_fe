@@ -104,19 +104,6 @@
   text-align: center;
 }
 
-.pages {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.pages img {
-  width: 100%;
-  height: auto;
-  display: block;
-  background: white;
-}
-
 .empty {
   padding: 60px 20px;
   border: 1px solid rgba(255, 255, 255, 0.08);

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ChapterSelect from "@/components/ChapterSelect";
+import MangaAiReader from "@/components/MangaAiReader";
 import ReadingHistoryTracker from "@/components/ReadingHistoryTracker";
 import { pool } from "@/lib/db";
 import styles from "./page.module.css";
@@ -22,6 +23,7 @@ type ChapterImage = {
   id: string;
   position: number;
   src: string;
+  local_path: string | null;
 };
 
 export const dynamic = "force-dynamic";
@@ -53,9 +55,9 @@ export default async function ReaderPage({
       [chapter.manga_title_id]
     ),
     pool.query<ChapterImage>(
-      `SELECT id, position, src
+      `SELECT id, position, src, local_path
        FROM chapter_images
-       WHERE chapter_id = $1
+       WHERE chapter_id = $1 AND local_path IS NOT NULL
        ORDER BY position`,
       [chapterId]
     ),
@@ -124,17 +126,14 @@ export default async function ReaderPage({
       <div className={styles.viewer}>
         <p>↓ スクロールして読む</p>
         {imagesResult.rows.length > 0 ? (
-          <div className={styles.pages}>
-            {imagesResult.rows.map((image, index) => (
-              <img
-                alt={`${chapter.title} ${chapter.name} page ${index + 1}`}
-                decoding="async"
-                key={image.id}
-                loading={index < 2 ? "eager" : "lazy"}
-                src={image.src}
-              />
-            ))}
-          </div>
+          <MangaAiReader
+            images={imagesResult.rows.map((image, index) => ({
+              id: image.id,
+              src: `/api/images/${image.id}`,
+              alt: `${chapter.title} ${chapter.name} page ${index + 1}`,
+              eager: index < 2,
+            }))}
+          />
         ) : (
           <div className={styles.empty}>
             Chapter này chưa có ảnh. Hãy chạy crawler lại.

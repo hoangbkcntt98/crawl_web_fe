@@ -7,6 +7,10 @@
   font: inherit;
 }
 
+.filterButton {
+  text-decoration: none;
+}
+
 .searchSummary {
   margin: 8px 0 0;
   color: #9aa8c0;

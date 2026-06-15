@@ -1,8 +1,68 @@
-import { execFile } from "child_process";
-import { promisify } from "util";
 import { pool } from "@/lib/db";
+import { spawnCrawler } from "@/lib/crawler";
 
-const execFileAsync = promisify(execFile);
+async function getChapter(id: string) {
+  const result = await pool.query<{
+    name: string;
+    site_key: string;
+    image_count: number;
+    crawled_at: string | null;
+    site_crawl_status: string;
+    site_crawl_error: string | null;
+  }>(
+    `SELECT
+       c.name,
+       m.site_key,
+       COUNT(i.id) FILTER (WHERE i.local_path IS NOT NULL)::int AS image_count,
+       c.crawled_at,
+       s.crawl_status AS site_crawl_status,
+       s.crawl_error AS site_crawl_error
+     FROM manga_chapters c
+     JOIN manga_titles m ON m.id = c.manga_title_id
+     JOIN crawler_sites s ON s.site_key = m.site_key
+     LEFT JOIN chapter_images i ON i.chapter_id = c.id
+     WHERE c.id = $1
+     GROUP BY c.id, m.site_key, s.crawl_status, s.crawl_error`,
+    [id]
+  );
+  return result.rows[0] ?? null;
+}
+
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  if (!/^\d+$/.test(id)) {
+    return Response.json(
+      { ok: false, message: "Invalid chapter ID" },
+      { status: 400 }
+    );
+  }
+
+  const chapter = await getChapter(id);
+  if (!chapter) {
+    return Response.json(
+      { ok: false, message: "Chapter not found" },
+      { status: 404 }
+    );
+  }
+
+  return Response.json({
+    ok: true,
+    imageCount: chapter.image_count,
+    crawledAt: chapter.crawled_at,
+    status:
+      chapter.image_count > 0
+        ? "completed"
+        : chapter.site_crawl_status === "failed"
+          ? "failed"
+          : chapter.site_crawl_status === "crawling"
+            ? "crawling"
+            : "idle",
+    error: chapter.site_crawl_error,
+  });
+}
 
 export async function POST(
   _request: Request,
@@ -16,11 +76,7 @@ export async function POST(
     );
   }
 
-  const chapterResult = await pool.query<{ name: string }>(
-    "SELECT name FROM manga_chapters WHERE id = $1",
-    [id]
-  );
-  const chapter = chapterResult.rows[0];
+  const chapter = await getChapter(id);
   if (!chapter) {
     return Response.json(
       { ok: false, message: "Chapter not found" },
@@ -28,28 +84,36 @@ export async function POST(
     );
   }
 
-  const script =
-    process.env.CRAWLER_SCRIPT || "/home/opc/manga-crawler/run_crawler.sh";
-
   try {
-    await execFileAsync(script, ["--chapter-id", id], {
-      timeout: 120_000,
-      maxBuffer: 1024 * 1024,
-    });
-
-    const imageResult = await pool.query<{ total: number }>(
-      `SELECT COUNT(*)::int AS total
-       FROM chapter_images
-       WHERE chapter_id = $1`,
-      [id]
+    await pool.query(
+      `UPDATE crawler_sites
+       SET crawl_status = 'crawling', crawl_error = NULL, updated_at = NOW()
+       WHERE site_key = $1`,
+      [chapter.site_key]
     );
-    const total = imageResult.rows[0]?.total ?? 0;
-
-    return Response.json({
-      ok: true,
-      message: `${chapter.name}: crawled ${total} images`,
-      imageCount: total,
+    const crawler = spawnCrawler([
+      "--site-key",
+      chapter.site_key,
+      "--chapter-id",
+      id,
+    ]);
+    crawler.once("error", (error) => {
+      void pool.query(
+        `UPDATE crawler_sites
+         SET crawl_status = 'failed', crawl_error = $1, updated_at = NOW()
+         WHERE site_key = $2`,
+        [error.message, chapter.site_key]
+      );
     });
+
+    return Response.json(
+      {
+        ok: true,
+        message: `${chapter.name}: crawl started`,
+        status: "crawling",
+      },
+      { status: 202 }
+    );
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Could not crawl chapter";

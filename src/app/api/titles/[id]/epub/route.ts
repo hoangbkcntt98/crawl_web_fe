@@ -1,4 +1,5 @@
 import type { Archiver, ArchiverOptions } from "archiver";
+import { readFile } from "fs/promises";
 import { createRequire } from "module";
 import sharp from "sharp";
 import { PassThrough, Readable } from "stream";
@@ -20,6 +21,8 @@ type PageRow = {
   chapter_name: string;
   position: number;
   src: string;
+  local_path: string | null;
+  content_type: string | null;
 };
 
 type EpubPage = {
@@ -177,10 +180,13 @@ export async function GET(
          c.id AS chapter_id,
          c.name AS chapter_name,
          i.position,
-         i.src
+         i.src,
+         i.local_path,
+         i.content_type
        FROM manga_chapters c
        JOIN chapter_images i ON i.chapter_id = c.id
        WHERE c.manga_title_id = $1
+         AND i.local_path IS NOT NULL
        ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC, i.position ASC`,
       [id]
     ),
@@ -223,21 +229,26 @@ export async function GET(
 
       const epubPages: EpubPage[] = [];
       for (const [index, row] of pageResult.rows.entries()) {
-        const response = await fetch(row.src, {
-          headers: {
-            "User-Agent":
-              "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/136 Safari/537.36",
-          },
-          signal: AbortSignal.timeout(30_000),
-        });
-        if (!response.ok) {
-          throw new Error(`Could not download image ${row.src}`);
+        let imageBuffer: Buffer<ArrayBufferLike>;
+        let contentType = row.content_type;
+        if (row.local_path) {
+          imageBuffer = await readFile(row.local_path);
+        } else {
+          const response = await fetch(row.src, {
+            headers: {
+              "User-Agent":
+                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/136 Safari/537.36",
+            },
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!response.ok) {
+            throw new Error(`Could not download image ${row.src}`);
+          }
+          contentType = response.headers.get("content-type");
+          imageBuffer = Buffer.from(await response.arrayBuffer());
         }
 
-        let type = imageType(response.headers.get("content-type"), row.src);
-        let imageBuffer: Buffer<ArrayBufferLike> = Buffer.from(
-          await response.arrayBuffer()
-        );
+        let type = imageType(contentType, row.src);
         if (
           type.mediaType === "image/webp" ||
           type.mediaType === "image/avif"

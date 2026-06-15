@@ -1,5 +1,5 @@
-import { spawn } from "child_process";
 import { pool } from "@/lib/db";
+import { spawnCrawler } from "@/lib/crawler";
 
 type CrawlProgress = {
   status: string;
@@ -18,7 +18,7 @@ async function getProgress(id: string) {
          WHERE EXISTS (
            SELECT 1
            FROM chapter_images i
-           WHERE i.chapter_id = c.id
+           WHERE i.chapter_id = c.id AND i.local_path IS NOT NULL
          )
        )::int AS crawled
      FROM manga_titles m
@@ -67,8 +67,8 @@ export async function POST(
     );
   }
 
-  const titleResult = await pool.query<{ title: string }>(
-    `SELECT title
+  const titleResult = await pool.query<{ title: string; site_key: string }>(
+    `SELECT title, site_key
      FROM manga_titles
      WHERE id = $1`,
     [id]
@@ -80,9 +80,6 @@ export async function POST(
       { status: 404 }
     );
   }
-
-  const script =
-    process.env.CRAWLER_SCRIPT || "/home/opc/manga-crawler/run_crawler.sh";
 
   try {
     const started = await pool.query(
@@ -115,14 +112,14 @@ export async function POST(
       );
     }
 
-    const crawler = spawn(
-      script,
-      ["--manga-id", id, "--skip-title-list", "--crawl-images"],
-      {
-        detached: true,
-        stdio: "ignore",
-      }
-    );
+    const crawler = spawnCrawler([
+      "--site-key",
+      title.site_key,
+      "--manga-id",
+      id,
+      "--skip-title-list",
+      "--crawl-images",
+    ]);
     crawler.once("error", (error) => {
       void pool.query(
         `UPDATE manga_details
@@ -131,10 +128,6 @@ export async function POST(
         [error.message, id]
       );
     });
-    crawler.once("spawn", () => {
-      crawler.unref();
-    });
-
     const progress = await getProgress(id);
 
     return Response.json({

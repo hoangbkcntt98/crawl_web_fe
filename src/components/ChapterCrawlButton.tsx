@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function ChapterCrawlButton({
   chapterId,
@@ -15,6 +15,33 @@ export default function ChapterCrawlButton({
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    if (!loading) return;
+
+    const interval = window.setInterval(async () => {
+      try {
+        const response = await fetch(`/api/chapters/${chapterId}/crawl`, {
+          cache: "no-store",
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Crawl failed");
+
+        if (data.status === "completed") {
+          setMessage(`${data.imageCount} ảnh`);
+          setLoading(false);
+          router.refresh();
+        } else if (data.status === "failed") {
+          throw new Error(data.error || "Crawl failed");
+        }
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : "Crawl failed");
+        setLoading(false);
+      }
+    }, 1500);
+
+    return () => window.clearInterval(interval);
+  }, [chapterId, loading, router]);
 
   async function crawl() {
     setLoading(true);
@@ -30,11 +57,9 @@ export default function ChapterCrawlButton({
         throw new Error(data.message || "Crawl failed");
       }
 
-      setMessage(`${data.imageCount} ảnh`);
-      router.refresh();
+      setMessage(data.message || "Crawler started");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Crawl failed");
-    } finally {
       setLoading(false);
     }
   }

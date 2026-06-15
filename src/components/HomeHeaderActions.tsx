@@ -6,8 +6,12 @@ import styles from "./HomeHeaderActions.module.css";
 
 export default function HomeHeaderActions({
   initialQuery,
+  crawledOnly,
+  siteKey,
 }: {
   initialQuery: string;
+  crawledOnly: boolean;
+  siteKey: string;
 }) {
   const [mobilePanel, setMobilePanel] = useState<"search" | "menu" | null>(null);
 
@@ -18,6 +22,8 @@ export default function HomeHeaderActions({
   return (
     <div className={styles.actions}>
       <form action="/" className={styles.desktopSearch} method="get">
+        <input name="site" type="hidden" value={siteKey} />
+        {crawledOnly ? <input name="filter" type="hidden" value="crawled" /> : null}
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <circle cx="11" cy="11" r="6.5" />
           <path d="m16 16 4 4" />
@@ -63,6 +69,8 @@ export default function HomeHeaderActions({
 
       {mobilePanel === "search" && (
         <form action="/" className={styles.mobileSearch} method="get">
+          <input name="site" type="hidden" value={siteKey} />
+          {crawledOnly ? <input name="filter" type="hidden" value="crawled" /> : null}
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="11" cy="11" r="6.5" />
             <path d="m16 16 4 4" />
@@ -81,6 +89,12 @@ export default function HomeHeaderActions({
       {mobilePanel === "menu" && (
         <nav className={styles.mobileMenu} aria-label="Mobile navigation">
           <Link href="/" onClick={() => setMobilePanel(null)}>
+            サイト
+          </Link>
+          <Link
+            href={`/?site=${encodeURIComponent(siteKey)}`}
+            onClick={() => setMobilePanel(null)}
+          >
             漫画リスト
           </Link>
           <Link href="#" onClick={() => setMobilePanel(null)}>

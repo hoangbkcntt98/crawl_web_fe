@@ -8,6 +8,7 @@ import styles from "./page.module.css";
 
 type Manga = {
   id: string;
+  site_key: string;
   title: string;
   href: string;
   src: string | null;
@@ -35,7 +36,7 @@ export default async function MangaDetailPage({
 
   const [mangaResult, chapterResult, favoriteResult] = await Promise.all([
     pool.query<Manga>(
-      `SELECT m.id, m.title, m.href, m.src, d.description
+      `SELECT m.id, m.site_key, m.title, m.href, m.src, d.description
        FROM manga_titles m
        LEFT JOIN manga_details d ON d.manga_title_id = m.id
        WHERE m.id = $1`,
@@ -48,7 +49,7 @@ export default async function MangaDetailPage({
          c.chapter_number,
          c.source_published_at,
          c.crawled_at,
-         COUNT(i.id)::int AS image_count
+         COUNT(i.id) FILTER (WHERE i.local_path IS NOT NULL)::int AS image_count
        FROM manga_chapters c
        LEFT JOIN chapter_images i ON i.chapter_id = c.id
        WHERE c.manga_title_id = $1
@@ -75,7 +76,9 @@ export default async function MangaDetailPage({
 
       <div className={styles.container}>
         <div className={styles.breadcrumbs}>
-          <Link href="/">ホーム</Link>
+          <Link href={`/?site=${encodeURIComponent(manga.site_key)}`}>
+            ホーム
+          </Link>
           <span>›</span>
           <span>{manga.title}</span>
         </div>

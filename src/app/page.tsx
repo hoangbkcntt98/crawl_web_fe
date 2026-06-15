@@ -1,6 +1,8 @@
 import { pool } from "@/lib/db";
+import { reconcileStoppedCrawlers } from "@/lib/crawler";
 import CrawlButton from "@/components/CrawlButton";
 import HomeHeaderActions from "@/components/HomeHeaderActions";
+import SiteRegistry from "@/components/SiteRegistry";
 import TitleCrawlButton from "@/components/TitleCrawlButton";
 import Link from "next/link";
 import styles from "./page.module.css";
@@ -21,7 +23,17 @@ type HomeProps = {
   searchParams: Promise<{
     page?: string | string[];
     q?: string | string[];
+    filter?: string | string[];
+    site?: string | string[];
   }>;
+};
+
+type CrawlerSite = {
+  site_key: string;
+  crawl_status: string;
+  crawl_error: string | null;
+  last_crawled_at: string | null;
+  title_count: number;
 };
 
 export const dynamic = "force-dynamic";
@@ -40,16 +52,47 @@ function getPageNumber(page: string | string[] | undefined) {
 }
 
 export default async function Home({ searchParams }: HomeProps) {
-  const { page, q } = await searchParams;
+  const { page, q, filter, site } = await searchParams;
+  await reconcileStoppedCrawlers();
+  const rawSite = Array.isArray(site) ? site[0] : site;
+  const selectedSite = rawSite?.trim() ?? "";
+  const sitesResult = await pool.query<CrawlerSite>(
+    `SELECT
+       s.site_key,
+       s.crawl_status,
+       s.crawl_error,
+       s.last_crawled_at,
+       COUNT(m.id)::int AS title_count
+     FROM crawler_sites s
+     LEFT JOIN manga_titles m ON m.site_key = s.site_key
+     GROUP BY s.id
+     ORDER BY s.created_at`
+  );
+  const sites = sitesResult.rows;
+  const activeSite = sites.find((item) => item.site_key === selectedSite);
+
+  if (
+    !selectedSite ||
+    !activeSite ||
+    activeSite.crawl_status === "failed"
+  ) {
+    return <SiteRegistry initialSites={sites} />;
+  }
+
   const currentPage = getPageNumber(page);
   const rawQuery = Array.isArray(q) ? q[0] : q;
+  const rawFilter = Array.isArray(filter) ? filter[0] : filter;
+  const crawledOnly = rawFilter === "crawled";
   const query = rawQuery?.trim() ?? "";
   const searchPattern = `%${query}%`;
   const countResult = await pool.query<{ total: number }>(
     `SELECT COUNT(*)::int AS total
-     FROM manga_titles
-     WHERE title ILIKE $1`,
-    [searchPattern]
+     FROM manga_titles m
+     LEFT JOIN manga_details d ON d.manga_title_id = m.id
+     WHERE m.site_key = $1
+       AND m.title ILIKE $2
+       AND ($3::boolean = false OR d.images_crawled_at IS NOT NULL)`,
+    [selectedSite, searchPattern, crawledOnly]
   );
   const totalItems = countResult.rows[0]?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -71,18 +114,20 @@ export default async function Home({ searchParams }: HomeProps) {
           WHERE EXISTS (
             SELECT 1
             FROM chapter_images i
-            WHERE i.chapter_id = c.id
+            WHERE i.chapter_id = c.id AND i.local_path IS NOT NULL
           )
         )::int AS crawled_chapter_count
       FROM manga_titles m
       LEFT JOIN manga_details d ON d.manga_title_id = m.id
       LEFT JOIN manga_chapters c ON c.manga_title_id = m.id
-      WHERE m.title ILIKE $1
+      WHERE m.site_key = $1
+        AND m.title ILIKE $2
+        AND ($3::boolean = false OR d.images_crawled_at IS NOT NULL)
       GROUP BY m.id, d.images_crawled_at, d.crawl_status
       ORDER BY chapter_count DESC, m.updated_at DESC
-      LIMIT $2 OFFSET $3
+      LIMIT $4 OFFSET $5
     `,
-    [searchPattern, PAGE_SIZE, offset]
+    [selectedSite, searchPattern, crawledOnly, PAGE_SIZE, offset]
   );
 
   const canGoPrevious = safePage > 1;
@@ -103,11 +148,23 @@ export default async function Home({ searchParams }: HomeProps) {
 
   const pageHref = (pageNumber: number) => {
     const params = new URLSearchParams();
+    params.set("site", selectedSite);
     if (query) {
       params.set("q", query);
     }
+    if (crawledOnly) {
+      params.set("filter", "crawled");
+    }
     params.set("page", String(pageNumber));
     return `/?${params.toString()}`;
+  };
+
+  const filterHref = (nextCrawledOnly: boolean) => {
+    const params = new URLSearchParams();
+    params.set("site", selectedSite);
+    if (query) params.set("q", query);
+    if (nextCrawledOnly) params.set("filter", "crawled");
+    return params.size > 0 ? `/?${params.toString()}` : "/";
   };
 
   return (
@@ -147,7 +204,7 @@ export default async function Home({ searchParams }: HomeProps) {
         >
           <Link
             className={styles.logo}
-            href="/"
+            href={`/?site=${encodeURIComponent(selectedSite)}`}
             style={{
               textDecoration: "none",
               color: "#fff",
@@ -166,6 +223,9 @@ export default async function Home({ searchParams }: HomeProps) {
             <Link href="#" style={{ color: "#93b7ff", textDecoration: "none", fontWeight: 700 }}>
               漫画リスト
             </Link>
+            <Link href="/" style={{ color: "#c5cbe0", textDecoration: "none" }}>
+              サイト
+            </Link>
             <Link href="#" style={{ color: "#c5cbe0", textDecoration: "none" }}>
               ジャンル
             </Link>
@@ -177,7 +237,11 @@ export default async function Home({ searchParams }: HomeProps) {
             </Link>
           </nav>
 
-          <HomeHeaderActions initialQuery={query} />
+          <HomeHeaderActions
+            crawledOnly={crawledOnly}
+            initialQuery={query}
+            siteKey={selectedSite}
+          />
         </div>
       </header>
 
@@ -190,12 +254,15 @@ export default async function Home({ searchParams }: HomeProps) {
             className={styles.title}
             style={{ fontSize: 28, margin: 0, fontWeight: 900, letterSpacing: -0.4 }}
           >
-            漫画を閲覧 <span style={{ color: "#8ea1c9", fontWeight: 700 }}>{totalItems} タイトル</span>
+            {selectedSite} · 漫画を閲覧{" "}
+            <span style={{ color: "#8ea1c9", fontWeight: 700 }}>{totalItems} タイトル</span>
           </h1>
           {query && (
             <p className={styles.searchSummary}>
               「{query}」の検索結果
-              <Link href="/">クリア</Link>
+              <Link href={`/?site=${encodeURIComponent(selectedSite)}`}>
+                クリア
+              </Link>
             </p>
           )}
           <p className={styles.resultSummary} style={{ margin: "10px 0 0", color: "#8ea1c9" }}>
@@ -224,8 +291,13 @@ export default async function Home({ searchParams }: HomeProps) {
             }}
           >
             <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-              <div style={pillStyle(true)}>最新更新</div>
-              <div style={pillStyle(false)}>すべて</div>
+              <div style={pillStyle(false)}>最新更新</div>
+              <Link href={filterHref(false)} style={pillStyle(!crawledOnly)}>
+                すべて
+              </Link>
+              <Link href={filterHref(true)} style={pillStyle(crawledOnly)}>
+                Crawled
+              </Link>
               <div style={pillStyle(false)}>進行中</div>
               <div style={pillStyle(false)}>完了</div>
             </div>
@@ -245,7 +317,7 @@ export default async function Home({ searchParams }: HomeProps) {
           </div>
 
           <div style={{ marginTop: 14 }}>
-            <CrawlButton />
+            <CrawlButton siteKey={selectedSite} />
           </div>
 
           <div className={styles.mobileFilters}>
@@ -255,14 +327,17 @@ export default async function Home({ searchParams }: HomeProps) {
                 <path d="m8 10 4 4 4-4" />
               </svg>
             </button>
-            <button type="button" className={styles.filterButton}>
+            <Link
+              className={styles.filterButton}
+              href={filterHref(!crawledOnly)}
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M7 4v16M17 4v16M4 8h6M14 16h6" />
                 <circle cx="7" cy="8" r="2" />
                 <circle cx="17" cy="16" r="2" />
               </svg>
-              フィルター
-            </button>
+              {crawledOnly ? "すべて" : "Crawled"}
+            </Link>
           </div>
         </section>
 
@@ -468,6 +543,7 @@ function pillStyle(active: boolean): React.CSSProperties {
     padding: "10px 14px",
     fontSize: 14,
     fontWeight: 700,
+    textDecoration: "none",
   };
 }
 
