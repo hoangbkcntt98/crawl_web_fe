@@ -1,0 +1,146 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import ChapterSelect from "@/components/ChapterSelect";
+import ReadingHistoryTracker from "@/components/ReadingHistoryTracker";
+import { pool } from "@/lib/db";
+import styles from "./page.module.css";
+
+type Chapter = {
+  id: string;
+  manga_title_id: string;
+  name: string;
+  title: string;
+};
+
+type ChapterOption = {
+  id: string;
+  name: string;
+  chapter_number: string | null;
+};
+
+type ChapterImage = {
+  id: string;
+  position: number;
+  src: string;
+};
+
+export const dynamic = "force-dynamic";
+
+export default async function ReaderPage({
+  params,
+}: {
+  params: Promise<{ chapterId: string }>;
+}) {
+  const { chapterId } = await params;
+  if (!/^\d+$/.test(chapterId)) notFound();
+
+  const chapterResult = await pool.query<Chapter>(
+    `SELECT c.id, c.manga_title_id, c.name, m.title
+     FROM manga_chapters c
+     JOIN manga_titles m ON m.id = c.manga_title_id
+     WHERE c.id = $1`,
+    [chapterId]
+  );
+  const chapter = chapterResult.rows[0];
+  if (!chapter) notFound();
+
+  const [optionsResult, imagesResult] = await Promise.all([
+    pool.query<ChapterOption>(
+      `SELECT c.id, c.name, c.chapter_number
+       FROM manga_chapters c
+       WHERE c.manga_title_id = $1
+       ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC`,
+      [chapter.manga_title_id]
+    ),
+    pool.query<ChapterImage>(
+      `SELECT id, position, src
+       FROM chapter_images
+       WHERE chapter_id = $1
+       ORDER BY position`,
+      [chapterId]
+    ),
+  ]);
+
+  const chapters = optionsResult.rows;
+  const currentIndex = chapters.findIndex((item) => item.id === chapter.id);
+  const previous = currentIndex > 0 ? chapters[currentIndex - 1] : null;
+  const next =
+    currentIndex >= 0 && currentIndex < chapters.length - 1
+      ? chapters[currentIndex + 1]
+      : null;
+
+  return (
+    <main className={styles.page}>
+      <ReadingHistoryTracker chapterId={chapter.id} />
+      <header className={styles.readerHeader}>
+        <div className={styles.headerInner}>
+          <div className={styles.breadcrumbs}>
+            <Link href="/">ホーム</Link>
+            <span>›</span>
+            <Link href={`/manga/${chapter.manga_title_id}`}>
+              {chapter.title}
+            </Link>
+            <span>›</span>
+            <strong>{chapter.name}</strong>
+          </div>
+          <h1>{chapter.title}</h1>
+          <p>{chapter.name}</p>
+        </div>
+      </header>
+
+      <nav className={styles.chapterNav}>
+        <div className={styles.navInner}>
+          <Link className={styles.homeButton} href="/">
+            ◆
+          </Link>
+          {previous ? (
+            <Link className={styles.arrowButton} href={`/read/${previous.id}`}>
+              ‹
+            </Link>
+          ) : (
+            <span className={`${styles.arrowButton} ${styles.inactive}`}>‹</span>
+          )}
+          <ChapterSelect
+            chapters={chapters}
+            className={styles.select}
+            currentChapterId={chapter.id}
+          />
+          {next ? (
+            <Link className={styles.arrowButton} href={`/read/${next.id}`}>
+              ›
+            </Link>
+          ) : (
+            <span className={`${styles.arrowButton} ${styles.inactive}`}>›</span>
+          )}
+          <Link
+            className={styles.homeButton}
+            href={`/manga/${chapter.manga_title_id}`}
+          >
+            ♧
+          </Link>
+        </div>
+      </nav>
+
+      <div className={styles.viewer}>
+        <p>↓ スクロールして読む</p>
+        {imagesResult.rows.length > 0 ? (
+          <div className={styles.pages}>
+            {imagesResult.rows.map((image, index) => (
+              <img
+                alt={`${chapter.title} ${chapter.name} page ${index + 1}`}
+                decoding="async"
+                key={image.id}
+                loading={index < 2 ? "eager" : "lazy"}
+                src={image.src}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className={styles.empty}>
+            Chapter này chưa có ảnh. Hãy chạy crawler lại.
+          </div>
+        )}
+      </div>
+    </main>
+  );
+}

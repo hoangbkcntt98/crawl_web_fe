@@ -1,0 +1,202 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import ChapterCrawlButton from "@/components/ChapterCrawlButton";
+import FavoriteButton from "@/components/FavoriteButton";
+import SiteHeader from "@/components/SiteHeader";
+import { pool } from "@/lib/db";
+import styles from "./page.module.css";
+
+type Manga = {
+  id: string;
+  title: string;
+  href: string;
+  src: string | null;
+  description: string | null;
+};
+
+type Chapter = {
+  id: string;
+  name: string;
+  chapter_number: string | null;
+  source_published_at: string | null;
+  crawled_at: Date | null;
+  image_count: number;
+};
+
+export const dynamic = "force-dynamic";
+
+export default async function MangaDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  if (!/^\d+$/.test(id)) notFound();
+
+  const [mangaResult, chapterResult, favoriteResult] = await Promise.all([
+    pool.query<Manga>(
+      `SELECT m.id, m.title, m.href, m.src, d.description
+       FROM manga_titles m
+       LEFT JOIN manga_details d ON d.manga_title_id = m.id
+       WHERE m.id = $1`,
+      [id]
+    ),
+    pool.query<Chapter>(
+      `SELECT
+         c.id,
+         c.name,
+         c.chapter_number,
+         c.source_published_at,
+         c.crawled_at,
+         COUNT(i.id)::int AS image_count
+       FROM manga_chapters c
+       LEFT JOIN chapter_images i ON i.chapter_id = c.id
+       WHERE c.manga_title_id = $1
+       GROUP BY c.id
+       ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC`,
+      [id]
+    ),
+    pool.query(
+      "SELECT 1 FROM manga_favorites WHERE manga_title_id = $1",
+      [id]
+    ),
+  ]);
+
+  const manga = mangaResult.rows[0];
+  if (!manga) notFound();
+
+  const chapters = chapterResult.rows;
+  const readableChapters = chapters.filter((chapter) => chapter.image_count > 0);
+  const firstChapter = readableChapters[0] ?? chapters[0];
+
+  return (
+    <main className={styles.page}>
+      <SiteHeader />
+
+      <div className={styles.container}>
+        <div className={styles.breadcrumbs}>
+          <Link href="/">ホーム</Link>
+          <span>›</span>
+          <span>{manga.title}</span>
+        </div>
+
+        <section className={styles.panel}>
+          <div className={styles.hero}>
+            <div className={styles.coverColumn}>
+              {manga.src ? (
+                <img className={styles.cover} src={manga.src} alt={manga.title} />
+              ) : (
+                <div className={styles.coverFallback}>No image</div>
+              )}
+
+              {firstChapter && (
+                <div className={styles.bookActions}>
+                  <Link
+                    className={styles.readButton}
+                    href={`/read/${firstChapter.id}`}
+                  >
+                    ◉　今すぐ読む
+                  </Link>
+                  {readableChapters.length > 0 && (
+                    <a
+                      className={styles.epubButton}
+                      href={`/api/titles/${manga.id}/epub`}
+                    >
+                      ↓　EPUB
+                    </a>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className={styles.info}>
+              <h1>{manga.title} Raw Free</h1>
+              <p className={styles.subtitle}>{manga.title}</p>
+              <div className={styles.stats}>
+                <span>{chapters.length} チャプター</span>
+                <span>{readableChapters.length} 読める</span>
+              </div>
+              <FavoriteButton
+                className={styles.favoriteButton}
+                initialFavorite={Boolean(favoriteResult.rowCount)}
+                mangaId={manga.id}
+              />
+              <p className={styles.description}>
+                {manga.description || "作品情報はクロール後に表示されます。"}
+              </p>
+            </div>
+          </div>
+
+          <div className={styles.chapterSection}>
+            <div className={styles.chapterHeading}>
+              <h2>▣　チャプター</h2>
+              <span>{chapters.length} 件</span>
+            </div>
+
+            {chapters.length > 0 ? (
+              <div className={styles.chapterList}>
+                {chapters.map((chapter) => {
+                  return (
+                    <div className={styles.chapterRow} key={chapter.id}>
+                      <span className={styles.chapterNumber}>
+                        {chapter.chapter_number ?? "–"}
+                      </span>
+                      <div className={styles.chapterTitle}>
+                        {chapter.image_count > 0 ? (
+                          <Link
+                            className={styles.chapterLink}
+                            href={`/read/${chapter.id}`}
+                          >
+                            {chapter.name}
+                          </Link>
+                        ) : (
+                          <strong>{chapter.name}</strong>
+                        )}
+                        {chapter.crawled_at && (
+                          <small>
+                            Crawled:{" "}
+                            {new Date(chapter.crawled_at).toLocaleString(
+                              "vi-VN",
+                              {
+                                timeZone: "Asia/Ho_Chi_Minh",
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                              }
+                            )}
+                          </small>
+                        )}
+                      </div>
+                      <span className={styles.chapterDate}>
+                        {chapter.source_published_at ?? ""}
+                      </span>
+                      <span className={styles.imageCount}>
+                        {chapter.image_count > 0
+                          ? `${chapter.image_count} pages`
+                          : "chưa có ảnh"}
+                      </span>
+                      <ChapterCrawlButton
+                        chapterId={chapter.id}
+                        className={styles.crawlAction}
+                        isDone={
+                          chapter.image_count > 0 && chapter.crawled_at !== null
+                        }
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className={styles.empty}>
+                Chưa có chapter. Hãy chạy crawler để tải dữ liệu.
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
