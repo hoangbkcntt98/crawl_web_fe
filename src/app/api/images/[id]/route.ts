@@ -3,11 +3,12 @@ import { realpath, stat } from "fs/promises";
 import { sep } from "path";
 import { Readable } from "stream";
 import { pool } from "@/lib/db";
-import { imageStorageRoot } from "@/lib/imageStorage";
+import { imageStorageRoot, resolveImageStorageRoot } from "@/lib/imageStorage";
 
 type ImageRow = {
   local_path: string;
   content_type: string | null;
+  local_image_storage_path: string | null;
 };
 
 export const dynamic = "force-dynamic";
@@ -23,9 +24,15 @@ export async function GET(
   }
 
   const result = await pool.query<ImageRow>(
-    `SELECT local_path, content_type
-     FROM chapter_images
-     WHERE id = $1 AND local_path IS NOT NULL`,
+    `SELECT
+       i.local_path,
+       i.content_type,
+       s.local_image_storage_path
+     FROM chapter_images i
+     JOIN manga_chapters c ON c.id = i.chapter_id
+     JOIN manga_titles m ON m.id = c.manga_title_id
+     JOIN crawler_sites s ON s.site_key = m.site_key
+     WHERE i.id = $1 AND i.local_path IS NOT NULL`,
     [id]
   );
   const image = result.rows[0];
@@ -34,11 +41,23 @@ export async function GET(
   }
 
   try {
-    const [rootPath, imagePath] = await Promise.all([
+    const [defaultRootPath, imagePath] = await Promise.all([
       realpath(imageStorageRoot),
       realpath(image.local_path),
     ]);
-    if (!imagePath.startsWith(`${rootPath}${sep}`)) {
+    const configuredRootPath = image.local_image_storage_path
+      ? await realpath(resolveImageStorageRoot(image.local_image_storage_path)).catch(
+          () => null
+        )
+      : null;
+    const allowedRoots = Array.from(
+      new Set(
+        [defaultRootPath, configuredRootPath].filter(
+          (rootPath): rootPath is string => Boolean(rootPath)
+        )
+      )
+    );
+    if (!allowedRoots.some((rootPath) => imagePath.startsWith(`${rootPath}${sep}`))) {
       return Response.json({ message: "Invalid image path" }, { status: 403 });
     }
 

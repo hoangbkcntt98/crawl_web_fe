@@ -10,6 +10,8 @@ type Site = {
   crawl_status: string;
   crawl_error: string | null;
   last_crawled_at: string | null;
+  store_images_locally: boolean;
+  local_image_storage_path: string | null;
   title_count: number;
 };
 
@@ -25,6 +27,9 @@ type CloneDialog = {
 };
 
 const SITE_KEY_PATTERN = /^[a-z0-9][a-z0-9_-]{1,63}$/i;
+const NO_CHAPTERS_MESSAGE = "No chapters found for full title crawl";
+const NO_CHAPTERS_ALERT =
+  "チャプターが見つかりませんでした。タイトル一覧は表示できます。";
 
 const SAMPLE_CONFIG = `{
   "site_key": "example",
@@ -48,19 +53,35 @@ const SAMPLE_CONFIG = `{
   }
 }`;
 
-export default function SiteRegistry({ initialSites }: { initialSites: Site[] }) {
+export default function SiteRegistry({
+  defaultImageStoragePath,
+  initialSites,
+}: {
+  defaultImageStoragePath: string;
+  initialSites: Site[];
+}) {
   const router = useRouter();
   const [configText, setConfigText] = useState(SAMPLE_CONFIG);
   const [sites, setSites] = useState(initialSites);
+  const [storageDrafts, setStorageDrafts] = useState<Record<string, string>>(
+    () => getStorageDrafts(initialSites)
+  );
   const [message, setMessage] = useState("");
   const [saving, setSaving] = useState(false);
   const [loadingSample, setLoadingSample] = useState(false);
   const [crawlingSite, setCrawlingSite] = useState<string | null>(null);
   const [deletingSite, setDeletingSite] = useState<string | null>(null);
+  const [updatingStorageSite, setUpdatingStorageSite] = useState<string | null>(
+    null
+  );
   const [formMode, setFormMode] = useState<FormMode>({ type: "register" });
   const [cloneDialog, setCloneDialog] = useState<CloneDialog | null>(null);
   const configRef = useRef<HTMLTextAreaElement | null>(null);
   const cloneInputRef = useRef<HTMLInputElement | null>(null);
+
+  function isNoChaptersWarning(site: Site) {
+    return Boolean(site.crawl_error?.includes(NO_CHAPTERS_MESSAGE));
+  }
 
   useEffect(() => {
     if (!sites.some((site) => site.crawl_status === "crawling")) return;
@@ -70,6 +91,10 @@ export default function SiteRegistry({ initialSites }: { initialSites: Site[] })
       const data = await response.json();
       if (response.ok) {
         setSites(data.sites || []);
+        setStorageDrafts((current) => ({
+          ...getStorageDrafts(data.sites || []),
+          ...current,
+        }));
         if (
           !(data.sites || []).some(
             (site: Site) => site.crawl_status === "crawling"
@@ -119,6 +144,7 @@ export default function SiteRegistry({ initialSites }: { initialSites: Site[] })
       const sitesResponse = await fetch("/api/sites", { cache: "no-store" });
       const sitesData = await sitesResponse.json();
       setSites(sitesData.sites || []);
+      setStorageDrafts(getStorageDrafts(sitesData.sites || []));
       setMessage(
         editing
           ? `${data.site.site_key} を更新しました。`
@@ -345,6 +371,64 @@ export default function SiteRegistry({ initialSites }: { initialSites: Site[] })
     }
   }
 
+  async function updateStorageMode(
+    siteKey: string,
+    storeImagesLocally: boolean,
+    localImageStoragePath = storageDrafts[siteKey] ?? ""
+  ) {
+    setUpdatingStorageSite(siteKey);
+    setMessage("");
+    try {
+      const response = await fetch(
+        `/api/sites/${encodeURIComponent(siteKey)}/storage`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            storeImagesLocally,
+            localImageStoragePath,
+          }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Could not update storage mode");
+      }
+
+      setSites((current) =>
+        current.map((site) =>
+          site.site_key === siteKey
+            ? {
+                ...site,
+                store_images_locally: data.site.store_images_locally,
+                local_image_storage_path: data.site.local_image_storage_path,
+              }
+            : site
+        )
+      );
+      setStorageDrafts((current) => ({
+        ...current,
+        [siteKey]: data.site.local_image_storage_path ?? "",
+      }));
+      setMessage(
+        `${siteKey}: ${
+          data.site.store_images_locally
+            ? `画像をローカル保存します: ${
+                data.site.local_image_storage_path || defaultImageStoragePath
+              }`
+            : "画像URLを直接使用します。"
+        }`
+      );
+      router.refresh();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Could not update storage mode"
+      );
+    } finally {
+      setUpdatingStorageSite(null);
+    }
+  }
+
   return (
     <main className={styles.page}>
       <div className={styles.inner}>
@@ -405,70 +489,155 @@ export default function SiteRegistry({ initialSites }: { initialSites: Site[] })
               const crawling =
                 site.crawl_status === "crawling" ||
                 crawlingSite === site.site_key;
+              const noChaptersWarning = isNoChaptersWarning(site);
               return (
                 <article className={styles.siteCard} key={site.site_key}>
-                  <div className={styles.siteInfo}>
-                    <strong>{site.site_key}</strong>
-                    <span>
-                      {site.title_count} titles · Status: {site.crawl_status}
-                    </span>
-                    {site.crawl_error ? (
-                      <span className={styles.error}>{site.crawl_error}</span>
-                    ) : null}
-                  </div>
-                  <div className={styles.siteActions}>
-                    <button
-                      className={styles.configButton}
-                      onClick={() => viewConfig(site.site_key)}
-                      type="button"
-                    >
-                      View config
-                    </button>
-                    <button
-                      className={styles.editButton}
-                      disabled={crawling}
-                      onClick={() => prepareConfig(site.site_key, "edit")}
-                      type="button"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className={styles.cloneButton}
-                      onClick={() => openCloneDialog(site.site_key)}
-                      type="button"
-                    >
-                      Clone
-                    </button>
-                    <Link
-                      className={styles.viewButton}
-                      aria-disabled={site.crawl_status === "failed"}
-                      href={`/?site=${encodeURIComponent(site.site_key)}`}
-                      onClick={(event) => {
-                        if (site.crawl_status === "failed") {
-                          event.preventDefault();
+                  <div className={styles.siteTopRow}>
+                    <strong className={styles.siteName}>{site.site_key}</strong>
+                    <div className={styles.siteActions}>
+                      <button
+                        aria-label={`View config: ${site.site_key}`}
+                        className={`${styles.iconButton} ${styles.configButton}`}
+                        onClick={() => viewConfig(site.site_key)}
+                        title="View config"
+                        type="button"
+                      >
+                        <ConfigIcon />
+                      </button>
+                      <button
+                        aria-label={`Edit config: ${site.site_key}`}
+                        className={`${styles.iconButton} ${styles.editButton}`}
+                        disabled={crawling}
+                        onClick={() => prepareConfig(site.site_key, "edit")}
+                        title="Edit"
+                        type="button"
+                      >
+                        <EditIcon />
+                      </button>
+                      <button
+                        aria-label={`Clone config: ${site.site_key}`}
+                        className={`${styles.iconButton} ${styles.cloneButton}`}
+                        onClick={() => openCloneDialog(site.site_key)}
+                        title="Clone"
+                        type="button"
+                      >
+                        <CloneIcon />
+                      </button>
+                      <label className={styles.storageToggle}>
+                        <input
+                          checked={site.store_images_locally}
+                          disabled={
+                            crawling || updatingStorageSite === site.site_key
+                          }
+                          onChange={(event) =>
+                            void updateStorageMode(
+                              site.site_key,
+                              event.target.checked,
+                              storageDrafts[site.site_key] ?? ""
+                            )
+                          }
+                          type="checkbox"
+                        />
+                        <span>Local</span>
+                      </label>
+                      {site.store_images_locally ? (
+                        <div className={styles.storagePathEditor}>
+                          <input
+                            aria-label={`${site.site_key} local image path`}
+                            disabled={
+                              crawling || updatingStorageSite === site.site_key
+                            }
+                            onChange={(event) =>
+                              setStorageDrafts((current) => ({
+                                ...current,
+                                [site.site_key]: event.target.value,
+                              }))
+                            }
+                            placeholder={defaultImageStoragePath}
+                            type="text"
+                            value={storageDrafts[site.site_key] ?? ""}
+                          />
+                          <button
+                            disabled={
+                              crawling || updatingStorageSite === site.site_key
+                            }
+                            onClick={() =>
+                              updateStorageMode(
+                                site.site_key,
+                                true,
+                                storageDrafts[site.site_key] ?? ""
+                              )
+                            }
+                            type="button"
+                          >
+                            Save path
+                          </button>
+                        </div>
+                      ) : null}
+                      <Link
+                        aria-disabled={
+                          site.crawl_status === "failed" && !noChaptersWarning
                         }
-                      }}
-                    >
-                      View titles
-                    </Link>
-                    <button
-                      className={styles.crawlButton}
-                      disabled={crawling || deletingSite === site.site_key}
-                      onClick={() => crawlSite(site.site_key)}
-                      type="button"
-                    >
-                      {crawling ? "Crawling..." : "Crawl"}
-                    </button>
-                    <button
-                      className={styles.deleteButton}
-                      disabled={crawling || deletingSite === site.site_key}
-                      onClick={() => deleteConfig(site.site_key)}
-                      type="button"
-                    >
-                      {deletingSite === site.site_key
-                        ? "Deleting..."
-                        : "Delete"}
-                    </button>
+                        className={styles.viewButton}
+                        href={`/?site=${encodeURIComponent(site.site_key)}`}
+                        onClick={(event) => {
+                          if (
+                            site.crawl_status === "failed" &&
+                            noChaptersWarning
+                          ) {
+                            window.alert(NO_CHAPTERS_ALERT);
+                            return;
+                          }
+
+                          if (site.crawl_status === "failed") {
+                            event.preventDefault();
+                          }
+                        }}
+                      >
+                        View titles
+                      </Link>
+                      <button
+                        className={styles.crawlButton}
+                        disabled={crawling || deletingSite === site.site_key}
+                        onClick={() => crawlSite(site.site_key)}
+                        type="button"
+                      >
+                        {crawling ? "Crawling..." : "Crawl"}
+                      </button>
+                      <button
+                        className={styles.deleteButton}
+                        disabled={crawling || deletingSite === site.site_key}
+                        onClick={() => deleteConfig(site.site_key)}
+                        type="button"
+                      >
+                        {deletingSite === site.site_key
+                          ? "Deleting..."
+                          : "Delete"}
+                      </button>
+                    </div>
+                  </div>
+                  <div className={styles.siteInfo}>
+                    <span>{site.title_count} titles</span>
+                    <span>
+                      Status: {noChaptersWarning ? "warning" : site.crawl_status}
+                    </span>
+                    <span>
+                      Images:{" "}
+                      {site.store_images_locally ? "Local storage" : "Direct URL"}
+                    </span>
+                    {site.store_images_locally ? (
+                      <span>
+                        Path:{" "}
+                        {site.local_image_storage_path || defaultImageStoragePath}
+                      </span>
+                    ) : null}
+                    {site.crawl_error ? (
+                      <span className={noChaptersWarning ? "" : styles.error}>
+                        {noChaptersWarning
+                          ? "Warning: no chapters were found in the last full title crawl."
+                          : site.crawl_error}
+                      </span>
+                    ) : null}
                   </div>
                 </article>
               );
@@ -526,5 +695,40 @@ export default function SiteRegistry({ initialSites }: { initialSites: Site[] })
         </div>
       ) : null}
     </main>
+  );
+}
+
+function getStorageDrafts(sites: Site[]) {
+  return Object.fromEntries(
+    sites.map((site) => [site.site_key, site.local_image_storage_path ?? ""])
+  );
+}
+
+function ConfigIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M4 5h16" />
+      <path d="M4 12h16" />
+      <path d="M4 19h10" />
+      <circle cx="17" cy="19" r="1.5" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <path d="M4 20h4l11-11a2.5 2.5 0 0 0-4-4L4 16v4Z" />
+      <path d="m13 6 5 5" />
+    </svg>
+  );
+}
+
+function CloneIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24">
+      <rect height="11" rx="2" width="11" x="8" y="5" />
+      <path d="M5 8v9a2 2 0 0 0 2 2h9" />
+    </svg>
   );
 }

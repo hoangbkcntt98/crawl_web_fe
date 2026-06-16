@@ -16,6 +16,8 @@ export async function GET(
        crawl_status,
        crawl_error,
        last_crawled_at,
+       store_images_locally,
+       local_image_storage_path,
        created_at,
        updated_at
      FROM crawler_sites
@@ -79,7 +81,13 @@ export async function PATCH(
          updated_at = NOW()
      WHERE site_key = $2
        AND crawl_status IS DISTINCT FROM 'crawling'
-     RETURNING site_key, config, crawl_status, last_crawled_at`,
+     RETURNING
+       site_key,
+       config,
+       crawl_status,
+       last_crawled_at,
+       store_images_locally,
+       local_image_storage_path`,
     [JSON.stringify(config), siteKey]
   );
   const site = result.rows[0];
@@ -129,8 +137,11 @@ export async function DELETE(
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const siteResult = await client.query<{ crawl_status: string }>(
-      `SELECT crawl_status
+    const siteResult = await client.query<{
+      crawl_status: string;
+      local_image_storage_path: string | null;
+    }>(
+      `SELECT crawl_status, local_image_storage_path
        FROM crawler_sites
        WHERE site_key = $1
        FOR UPDATE`,
@@ -214,7 +225,10 @@ export async function DELETE(
     ]);
     await client.query("COMMIT");
     await removeStoredChapterImages(
-      localPathsResult.rows.map((row) => row.local_path)
+      localPathsResult.rows.map((row) => row.local_path),
+      [site.local_image_storage_path || undefined].filter(
+        (path): path is string => Boolean(path)
+      )
     ).catch((error) => {
       console.error(`Could not remove local images for ${siteKey}`, error);
     });

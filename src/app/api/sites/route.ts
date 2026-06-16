@@ -11,6 +11,8 @@ export async function GET() {
        s.crawl_status,
        s.crawl_error,
        s.last_crawled_at,
+       s.store_images_locally,
+       s.local_image_storage_path,
        COUNT(m.id)::int AS title_count
      FROM crawler_sites s
      LEFT JOIN manga_titles m ON m.site_key = s.site_key
@@ -53,13 +55,13 @@ export async function POST(request: Request) {
       createOnly
         ? `INSERT INTO crawler_sites (site_key, config)
            VALUES ($1, $2::jsonb)
-           RETURNING site_key, config, crawl_status, last_crawled_at`
+           RETURNING site_key, config, crawl_status, last_crawled_at, store_images_locally, local_image_storage_path`
         : `INSERT INTO crawler_sites (site_key, config)
            VALUES ($1, $2::jsonb)
            ON CONFLICT (site_key) DO UPDATE SET
              config = EXCLUDED.config,
              updated_at = NOW()
-           RETURNING site_key, config, crawl_status, last_crawled_at`,
+           RETURNING site_key, config, crawl_status, last_crawled_at, store_images_locally, local_image_storage_path`,
       [siteKey, JSON.stringify(config)]
     );
   } catch (error) {

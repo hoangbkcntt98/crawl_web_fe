@@ -3,7 +3,9 @@ import { reconcileStoppedCrawlers } from "@/lib/crawler";
 import CrawlButton from "@/components/CrawlButton";
 import HomeHeaderActions from "@/components/HomeHeaderActions";
 import SiteRegistry from "@/components/SiteRegistry";
+import SiteSwitcher from "@/components/SiteSwitcher";
 import TitleCrawlButton from "@/components/TitleCrawlButton";
+import { imageStorageRoot } from "@/lib/imageStorage";
 import Link from "next/link";
 import styles from "./page.module.css";
 
@@ -24,7 +26,9 @@ type HomeProps = {
     page?: string | string[];
     q?: string | string[];
     filter?: string | string[];
+    chapters?: string | string[];
     site?: string | string[];
+    sort?: string | string[];
   }>;
 };
 
@@ -33,6 +37,8 @@ type CrawlerSite = {
   crawl_status: string;
   crawl_error: string | null;
   last_crawled_at: string | null;
+  store_images_locally: boolean;
+  local_image_storage_path: string | null;
   title_count: number;
 };
 
@@ -41,6 +47,7 @@ export const revalidate = 0;
 
 const PAGE_SIZE = 24;
 const MAX_VISIBLE_PAGES = 7;
+const NO_CHAPTERS_MESSAGE = "No chapters found for full title crawl";
 
 function getPageNumber(page: string | string[] | undefined) {
   const rawPage = Array.isArray(page) ? page[0] : page;
@@ -51,8 +58,14 @@ function getPageNumber(page: string | string[] | undefined) {
     : 1;
 }
 
+function isNoChaptersWarning(site: CrawlerSite | undefined) {
+  return Boolean(site?.crawl_error?.includes(NO_CHAPTERS_MESSAGE));
+}
+
+type ChapterSort = "chapters_asc" | "chapters_desc";
+
 export default async function Home({ searchParams }: HomeProps) {
-  const { page, q, filter, site } = await searchParams;
+  const { page, q, filter, chapters, site, sort } = await searchParams;
   await reconcileStoppedCrawlers();
   const rawSite = Array.isArray(site) ? site[0] : site;
   const selectedSite = rawSite?.trim() ?? "";
@@ -62,6 +75,8 @@ export default async function Home({ searchParams }: HomeProps) {
        s.crawl_status,
        s.crawl_error,
        s.last_crawled_at,
+       s.store_images_locally,
+       s.local_image_storage_path,
        COUNT(m.id)::int AS title_count
      FROM crawler_sites s
      LEFT JOIN manga_titles m ON m.site_key = s.site_key
@@ -74,25 +89,38 @@ export default async function Home({ searchParams }: HomeProps) {
   if (
     !selectedSite ||
     !activeSite ||
-    activeSite.crawl_status === "failed"
+    (activeSite.crawl_status === "failed" && !isNoChaptersWarning(activeSite))
   ) {
-    return <SiteRegistry initialSites={sites} />;
+    return (
+      <SiteRegistry
+        defaultImageStoragePath={imageStorageRoot}
+        initialSites={sites}
+      />
+    );
   }
 
   const currentPage = getPageNumber(page);
   const rawQuery = Array.isArray(q) ? q[0] : q;
   const rawFilter = Array.isArray(filter) ? filter[0] : filter;
+  const rawChapters = Array.isArray(chapters) ? chapters[0] : chapters;
+  const rawSort = Array.isArray(sort) ? sort[0] : sort;
   const crawledOnly = rawFilter === "crawled";
+  const hasChaptersOnly = rawChapters === "has";
+  const chapterSort: ChapterSort =
+    rawSort === "chapters_asc" ? "chapters_asc" : "chapters_desc";
+  const chapterOrder = chapterSort === "chapters_asc" ? "ASC" : "DESC";
   const query = rawQuery?.trim() ?? "";
   const searchPattern = `%${query}%`;
   const countResult = await pool.query<{ total: number }>(
-    `SELECT COUNT(*)::int AS total
+    `SELECT COUNT(DISTINCT m.id)::int AS total
      FROM manga_titles m
      LEFT JOIN manga_details d ON d.manga_title_id = m.id
+     LEFT JOIN manga_chapters c ON c.manga_title_id = m.id
      WHERE m.site_key = $1
        AND m.title ILIKE $2
-       AND ($3::boolean = false OR d.images_crawled_at IS NOT NULL)`,
-    [selectedSite, searchPattern, crawledOnly]
+       AND ($3::boolean = false OR d.images_crawled_at IS NOT NULL)
+       AND ($4::boolean = false OR c.id IS NOT NULL)`,
+    [selectedSite, searchPattern, crawledOnly, hasChaptersOnly]
   );
   const totalItems = countResult.rows[0]?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -114,20 +142,36 @@ export default async function Home({ searchParams }: HomeProps) {
           WHERE EXISTS (
             SELECT 1
             FROM chapter_images i
-            WHERE i.chapter_id = c.id AND i.local_path IS NOT NULL
+            WHERE i.chapter_id = c.id
+              AND (
+                s.store_images_locally = FALSE
+                OR i.local_path IS NOT NULL
+              )
           )
         )::int AS crawled_chapter_count
       FROM manga_titles m
+      JOIN crawler_sites s ON s.site_key = m.site_key
       LEFT JOIN manga_details d ON d.manga_title_id = m.id
       LEFT JOIN manga_chapters c ON c.manga_title_id = m.id
       WHERE m.site_key = $1
         AND m.title ILIKE $2
         AND ($3::boolean = false OR d.images_crawled_at IS NOT NULL)
-      GROUP BY m.id, d.images_crawled_at, d.crawl_status
-      ORDER BY chapter_count DESC, m.updated_at DESC
-      LIMIT $4 OFFSET $5
+        AND ($4::boolean = false OR EXISTS (
+          SELECT 1 FROM manga_chapters existing_c
+          WHERE existing_c.manga_title_id = m.id
+        ))
+      GROUP BY m.id, s.store_images_locally, d.images_crawled_at, d.crawl_status
+      ORDER BY chapter_count ${chapterOrder}, m.updated_at DESC
+      LIMIT $5 OFFSET $6
     `,
-    [selectedSite, searchPattern, crawledOnly, PAGE_SIZE, offset]
+    [
+      selectedSite,
+      searchPattern,
+      crawledOnly,
+      hasChaptersOnly,
+      PAGE_SIZE,
+      offset,
+    ]
   );
 
   const canGoPrevious = safePage > 1;
@@ -155,16 +199,40 @@ export default async function Home({ searchParams }: HomeProps) {
     if (crawledOnly) {
       params.set("filter", "crawled");
     }
+    if (hasChaptersOnly) {
+      params.set("chapters", "has");
+    }
+    if (chapterSort !== "chapters_desc") {
+      params.set("sort", chapterSort);
+    }
     params.set("page", String(pageNumber));
     return `/?${params.toString()}`;
   };
 
-  const filterHref = (nextCrawledOnly: boolean) => {
+  const listHref = ({
+    nextCrawledOnly = crawledOnly,
+    nextHasChaptersOnly = hasChaptersOnly,
+    nextSort = chapterSort,
+  }: {
+    nextCrawledOnly?: boolean;
+    nextHasChaptersOnly?: boolean;
+    nextSort?: ChapterSort;
+  }) => {
     const params = new URLSearchParams();
     params.set("site", selectedSite);
-    if (query) params.set("q", query);
-    if (nextCrawledOnly) params.set("filter", "crawled");
-    return params.size > 0 ? `/?${params.toString()}` : "/";
+    if (query) {
+      params.set("q", query);
+    }
+    if (nextCrawledOnly) {
+      params.set("filter", "crawled");
+    }
+    if (nextHasChaptersOnly) {
+      params.set("chapters", "has");
+    }
+    if (nextSort !== "chapters_desc") {
+      params.set("sort", nextSort);
+    }
+    return `/?${params.toString()}`;
   };
 
   return (
@@ -226,6 +294,9 @@ export default async function Home({ searchParams }: HomeProps) {
             <Link href="/" style={{ color: "#c5cbe0", textDecoration: "none" }}>
               サイト
             </Link>
+            <Link href="/" style={{ color: "#c5cbe0", textDecoration: "none" }}>
+              Config regist
+            </Link>
             <Link href="#" style={{ color: "#c5cbe0", textDecoration: "none" }}>
               ジャンル
             </Link>
@@ -239,8 +310,10 @@ export default async function Home({ searchParams }: HomeProps) {
 
           <HomeHeaderActions
             crawledOnly={crawledOnly}
+            hasChaptersOnly={hasChaptersOnly}
             initialQuery={query}
             siteKey={selectedSite}
+            sort={chapterSort}
           />
         </div>
       </header>
@@ -271,7 +344,7 @@ export default async function Home({ searchParams }: HomeProps) {
         </section>
 
         <section
-          className={styles.filters}
+          className={styles.listToolbar}
           style={{
             borderRadius: 18,
             border: "1px solid rgba(255,255,255,0.08)",
@@ -281,63 +354,76 @@ export default async function Home({ searchParams }: HomeProps) {
             marginBottom: 22,
           }}
         >
-          <div className={styles.desktopFilters}
-            style={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 12,
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-              <div style={pillStyle(false)}>最新更新</div>
-              <Link href={filterHref(false)} style={pillStyle(!crawledOnly)}>
-                すべて
+          <SiteSwitcher
+            className={styles.siteSwitcher}
+            currentSiteKey={selectedSite}
+            crawledOnly={crawledOnly}
+            hasChaptersOnly={hasChaptersOnly}
+            query={query}
+            sort={chapterSort}
+            sites={sites}
+          />
+          <div className={styles.toolbarControls}>
+            <div className={styles.controlGroup} aria-label="Filter titles">
+              <span>Filter</span>
+              <Link
+                aria-current={!crawledOnly ? "page" : undefined}
+                className={`${styles.toolbarLink} ${
+                  !crawledOnly ? styles.toolbarLinkActive : ""
+                }`}
+                href={listHref({ nextCrawledOnly: false })}
+              >
+                All
               </Link>
-              <Link href={filterHref(true)} style={pillStyle(crawledOnly)}>
+              <Link
+                aria-current={crawledOnly ? "page" : undefined}
+                className={`${styles.toolbarLink} ${
+                  crawledOnly ? styles.toolbarLinkActive : ""
+                }`}
+                href={listHref({ nextCrawledOnly: true })}
+              >
                 Crawled
               </Link>
-              <div style={pillStyle(false)}>進行中</div>
-              <div style={pillStyle(false)}>完了</div>
-            </div>
-
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center" }}>
-              <div style={pillStyle(false)}>18+ コンテンツ</div>
-              <div
-                style={{
-                  ...pillStyle(true),
-                  background: "linear-gradient(180deg, #173a70 0%, #113262 100%)",
-                  color: "#d8e8ff",
-                }}
+              <Link
+                aria-current={hasChaptersOnly ? "page" : undefined}
+                className={`${styles.toolbarLink} ${
+                  hasChaptersOnly ? styles.toolbarLinkActive : ""
+                }`}
+                href={listHref({
+                  nextHasChaptersOnly: !hasChaptersOnly,
+                })}
               >
-                適用
-              </div>
+                Chapters &gt; 0
+              </Link>
             </div>
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <CrawlButton siteKey={selectedSite} />
-          </div>
-
-          <div className={styles.mobileFilters}>
-            <button type="button" className={styles.sortButton}>
-              <span>最新更新</span>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="m8 10 4 4 4-4" />
-              </svg>
-            </button>
-            <Link
-              className={styles.filterButton}
-              href={filterHref(!crawledOnly)}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M7 4v16M17 4v16M4 8h6M14 16h6" />
-                <circle cx="7" cy="8" r="2" />
-                <circle cx="17" cy="16" r="2" />
-              </svg>
-              {crawledOnly ? "すべて" : "Crawled"}
-            </Link>
+            <div className={styles.controlGroup} aria-label="Sort by chapter">
+              <span>Sort chapters</span>
+              <Link
+                aria-current={chapterSort === "chapters_desc" ? "page" : undefined}
+                className={`${styles.toolbarLink} ${
+                  chapterSort === "chapters_desc"
+                    ? styles.toolbarLinkActive
+                    : ""
+                }`}
+                href={listHref({ nextSort: "chapters_desc" })}
+              >
+                ↓ 多い順
+              </Link>
+              <Link
+                aria-current={chapterSort === "chapters_asc" ? "page" : undefined}
+                className={`${styles.toolbarLink} ${
+                  chapterSort === "chapters_asc"
+                    ? styles.toolbarLinkActive
+                    : ""
+                }`}
+                href={listHref({ nextSort: "chapters_asc" })}
+              >
+                ↑ 少ない順
+              </Link>
+            </div>
+            <div className={styles.logControls}>
+              <CrawlButton compact showStart={false} siteKey={selectedSite} />
+            </div>
           </div>
         </section>
 
@@ -532,19 +618,6 @@ export default async function Home({ searchParams }: HomeProps) {
       </div>
     </main>
   );
-}
-
-function pillStyle(active: boolean): React.CSSProperties {
-  return {
-    borderRadius: 12,
-    border: active ? "1px solid rgba(94, 163, 255, 0.35)" : "1px solid rgba(255,255,255,0.08)",
-    background: active ? "rgba(36, 69, 134, 0.65)" : "rgba(255,255,255,0.03)",
-    color: active ? "#dbe7ff" : "#d3d8e8",
-    padding: "10px 14px",
-    fontSize: 14,
-    fontWeight: 700,
-    textDecoration: "none",
-  };
 }
 
 function paginationButtonStyle(disabled: boolean, active = false): React.CSSProperties {

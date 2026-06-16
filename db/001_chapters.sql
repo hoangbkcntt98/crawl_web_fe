@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS manga_chapters (
     manga_title_id BIGINT NOT NULL,
     source_id BIGINT UNIQUE,
     name TEXT NOT NULL,
-    href TEXT UNIQUE NOT NULL,
+    href TEXT NOT NULL,
     chapter_number NUMERIC,
     source_published_at TEXT,
     crawled_at TIMESTAMPTZ,

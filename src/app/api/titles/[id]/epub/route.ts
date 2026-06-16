@@ -184,9 +184,14 @@ export async function GET(
          i.local_path,
          i.content_type
        FROM manga_chapters c
+       JOIN manga_titles m ON m.id = c.manga_title_id
+       JOIN crawler_sites s ON s.site_key = m.site_key
        JOIN chapter_images i ON i.chapter_id = c.id
        WHERE c.manga_title_id = $1
-         AND i.local_path IS NOT NULL
+         AND (
+           s.store_images_locally = FALSE
+           OR i.local_path IS NOT NULL
+         )
        ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC, i.position ASC`,
       [id]
     ),

@@ -2,11 +2,21 @@
 
 set -u
 
-REPO_DIR="/home/opc/manga-web"
+# Auto backup/push all code repositories for this manga project.
+#
+# The project is split across code repositories such as:
+# - /home/opc/manga-web: Next.js app, API routes, DB migrations, UI
+# - /home/opc/manga-crawler: generic crawler runtime and site config files
+#
+# /home/opc/manga-storage is intentionally not included because it stores
+# downloaded manga images and can become very large. The script discovers
+# /home/opc/manga-* folders but only pushes folders that are git repositories.
+
+REPO_GLOB="/home/opc/manga-*"
 BRANCH="develop"
 REMOTE="origin"
-LOG_FILE="$REPO_DIR/.git/auto-push.log"
-LOCK_FILE="/tmp/manga-web-auto-push.lock"
+LOG_FILE="/home/opc/manga-web/.git/auto-push.log"
+LOCK_FILE="/tmp/manga-auto-push.lock"
 
 mkdir -p "$(dirname "$LOG_FILE")"
 exec >>"$LOG_FILE" 2>&1
@@ -19,36 +29,79 @@ if ! flock -n 9; then
   exit 0
 fi
 
-cd "$REPO_DIR" || exit 1
+overall_status=0
+REPO_DIRS=()
 
-if [[ -e .git/MERGE_HEAD || -d .git/rebase-merge || -d .git/rebase-apply ]]; then
-  echo "Skipped because a merge or rebase is in progress."
-  exit 1
+for candidate in $REPO_GLOB; do
+  if [[ -d "$candidate/.git" ]]; then
+    REPO_DIRS+=("$candidate")
+  else
+    echo "Skipped non-git folder: $candidate"
+  fi
+done
+
+if [[ ${#REPO_DIRS[@]} -eq 0 ]]; then
+  echo "No git repositories matched $REPO_GLOB."
+  exit 0
 fi
 
-current_branch="$(git branch --show-current)"
-if [[ "$current_branch" != "$BRANCH" ]]; then
-  echo "Skipped: expected branch '$BRANCH', found '$current_branch'."
-  exit 1
-fi
+push_repo() {
+  local repo_dir="$1"
+  local repo_name
+  repo_name="$(basename "$repo_dir")"
 
-git add --all
+  echo "--- $repo_name: checking $repo_dir ---"
 
-if ! git diff --cached --quiet; then
-  commit_time="$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')"
-  git commit -m "chore: automatic backup $commit_time" || exit 1
+  if [[ ! -d "$repo_dir/.git" ]]; then
+    echo "$repo_name: skipped because it is not a git repository."
+    return 0
+  fi
+
+  cd "$repo_dir" || return 1
+
+  # Do not commit while git is in the middle of conflict-sensitive operations.
+  if [[ -e .git/MERGE_HEAD || -d .git/rebase-merge || -d .git/rebase-apply ]]; then
+    echo "$repo_name: skipped because a merge or rebase is in progress."
+    return 1
+  fi
+
+  local current_branch
+  current_branch="$(git branch --show-current)"
+  if [[ "$current_branch" != "$BRANCH" ]]; then
+    echo "$repo_name: skipped; expected branch '$BRANCH', found '$current_branch'."
+    return 1
+  fi
+
+  # Stage all tracked, modified, deleted and new files inside this repository.
+  git add --all
+
+  if ! git diff --cached --quiet; then
+    local commit_time
+    commit_time="$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M JST')"
+    git commit -m "chore: automatic backup $repo_name $commit_time" || return 1
+  else
+    echo "$repo_name: no new file changes to commit."
+  fi
+
+  # BatchMode avoids hanging forever if SSH credentials are not available.
+  GIT_SSH_COMMAND="ssh -o BatchMode=yes" git push "$REMOTE" "$BRANCH"
+}
+
+for repo_dir in "${REPO_DIRS[@]}"; do
+  if push_repo "$repo_dir"; then
+    echo "$(basename "$repo_dir"): push completed successfully."
+  else
+    status=$?
+    overall_status=$status
+    echo "$(basename "$repo_dir"): push failed with exit code $status."
+  fi
+done
+
+if [[ $overall_status -eq 0 ]]; then
+  echo "All configured repositories were pushed successfully."
 else
-  echo "No new file changes to commit."
-fi
-
-GIT_SSH_COMMAND="ssh -o BatchMode=yes" git push "$REMOTE" "$BRANCH"
-status=$?
-
-if [[ $status -eq 0 ]]; then
-  echo "Push completed successfully."
-else
-  echo "Push failed with exit code $status."
+  echo "One or more repositories failed to push."
 fi
 
 echo "[$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S JST')] Auto push finished"
-exit "$status"
+exit "$overall_status"

@@ -11,6 +11,7 @@ type Chapter = {
   manga_title_id: string;
   name: string;
   title: string;
+  store_images_locally: boolean;
 };
 
 type ChapterOption = {
@@ -37,9 +38,15 @@ export default async function ReaderPage({
   if (!/^\d+$/.test(chapterId)) notFound();
 
   const chapterResult = await pool.query<Chapter>(
-    `SELECT c.id, c.manga_title_id, c.name, m.title
+    `SELECT
+       c.id,
+       c.manga_title_id,
+       c.name,
+       m.title,
+       s.store_images_locally
      FROM manga_chapters c
      JOIN manga_titles m ON m.id = c.manga_title_id
+     JOIN crawler_sites s ON s.site_key = m.site_key
      WHERE c.id = $1`,
     [chapterId]
   );
@@ -57,9 +64,10 @@ export default async function ReaderPage({
     pool.query<ChapterImage>(
       `SELECT id, position, src, local_path
        FROM chapter_images
-       WHERE chapter_id = $1 AND local_path IS NOT NULL
+       WHERE chapter_id = $1
+         AND ($2::boolean = FALSE OR local_path IS NOT NULL)
        ORDER BY position`,
-      [chapterId]
+      [chapterId, chapter.store_images_locally]
     ),
   ]);
 
@@ -129,7 +137,9 @@ export default async function ReaderPage({
           <MangaAiReader
             images={imagesResult.rows.map((image, index) => ({
               id: image.id,
-              src: `/api/images/${image.id}`,
+              src: chapter.store_images_locally
+                ? `/api/images/${image.id}`
+                : image.src,
               alt: `${chapter.title} ${chapter.name} page ${index + 1}`,
               eager: index < 2,
             }))}

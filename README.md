@@ -1,18 +1,235 @@
-Run
+# Manga Web / Generic Manga Crawler
+
+Repo này là phần Next.js UI/API cho hệ thống crawl manga. Crawler Python nằm ở:
+
+```bash
+/home/opc/manga-crawler/generic_manga_crawler.py
+```
+
+Ảnh local, nếu site bật chế độ lưu local, mặc định nằm ở:
+
+```bash
+/home/opc/manga-storage
+```
+
+## Các repo được auto push
+
+`auto-git-push.sh` sẽ push các repo code sau:
+
+```bash
+/home/opc/manga-web
+/home/opc/manga-crawler
+```
+
+`/home/opc/manga-storage` không được push vì đây là folder dữ liệu ảnh, có thể rất nặng.
+
+Script chạy theo flow:
+
+1. Ghi log vào `/home/opc/manga-web/.git/auto-push.log`.
+2. Dùng lock `/tmp/manga-auto-push.lock` để tránh chạy trùng.
+3. Scan các folder `/home/opc/manga-*` và chỉ xử lý folder có `.git`.
+4. Với từng repo tìm được:
+   - bỏ qua nếu không có `.git`;
+   - bỏ qua nếu đang merge/rebase;
+   - chỉ chạy trên branch `develop`;
+   - `git add --all`;
+   - commit nếu có thay đổi;
+   - push lên `origin develop`.
+
+## Cách chạy crawler
+
+Chạy bằng config JSON file:
+
+```bash
+cd /home/opc/manga-crawler
 python generic_manga_crawler.py --config mangarw.config.json
+```
 
-Crawl only title + chapter list:
+Chạy bằng config đã đăng ký trong database:
 
-python generic_manga_crawler.py --config mangarw.config.json
+```bash
+python generic_manga_crawler.py --site-key mangarw
+```
 
-Crawl images too:
+Crawl title + chapter list, chưa crawl ảnh:
 
-python generic_manga_crawler.py --config mangarw.config.json --crawl-images
+```bash
+python generic_manga_crawler.py --site-key mangarw
+```
 
-Test one manga:
+Crawl cả ảnh:
 
-python generic_manga_crawler.py --config mangarw.config.json --manga-id 1 --max-chapters 3 --crawl-images
+```bash
+python generic_manga_crawler.py --site-key mangarw --crawl-images
+```
 
-Crawl one chapter:
+Test một manga:
 
-python generic_manga_crawler.py --config mangarw.config.json --chapter-id 10
+```bash
+python generic_manga_crawler.py --site-key mangarw --manga-id 1 --max-chapters 3 --crawl-images
+```
+
+Crawl lại chapter list cho một manga, không crawl ảnh:
+
+```bash
+python generic_manga_crawler.py --site-key mangarw --manga-id 1 --skip-title-list
+```
+
+Crawl ảnh của một chapter local:
+
+```bash
+python generic_manga_crawler.py --site-key mangarw --chapter-id 10
+```
+
+## Luồng xử lý của `generic_manga_crawler.py`
+
+### 1. Load config
+
+Crawler có 2 cách đọc config:
+
+- `--config path.json`: đọc trực tiếp từ file JSON.
+- `--site-key xxx`: đọc JSON từ bảng `crawler_sites.config`.
+
+Khi đọc từ DB, crawler cũng lấy thêm:
+
+- `store_images_locally`: site có lưu ảnh local không.
+- `local_image_storage_path`: nếu có thì lưu ảnh vào folder custom, nếu không thì dùng default `/home/opc/manga-storage`.
+
+### 2. Tạo hoặc migrate database
+
+Mỗi lần chạy, crawler gọi `create_tables(conn)` để đảm bảo schema tồn tại:
+
+- `crawler_sites`: config và trạng thái crawl của từng site.
+- `manga_titles`: title theo từng `site_key`.
+- `manga_details`: mô tả, trạng thái crawl, thời gian crawl ảnh.
+- `manga_chapters`: chapter theo từng title.
+- `chapter_images`: URL ảnh, local path, content type.
+
+Quan trọng:
+
+- `manga_titles` unique theo `(site_key, href)`, nên cùng một title URL có thể thuộc nhiều config/site khác nhau.
+- `manga_chapters` unique theo `(manga_title_id, href)`, nên cùng một chapter URL có thể thuộc nhiều title/site khác nhau.
+
+### 3. Crawl danh sách title
+
+Nếu không dùng `--skip-title-list` và không chỉ định `--manga-id`, crawler sẽ:
+
+1. Mở URL list trong config: `list.url`.
+2. Tính số page bằng pagination config.
+3. Với từng page, dùng selector trong config:
+   - `list.item_selector`
+   - `list.href`
+   - `list.title`
+   - `list.image`
+4. Upsert vào `manga_titles`.
+
+Có thể giới hạn page cần crawl bằng key `crawl_page` trong JSON config:
+
+```json
+{
+  "site_key": "example",
+  "crawl_page": [1, 2, 3],
+  "list": {
+    "url": "https://example.com/danh-sach",
+    "page_param": "page"
+  }
+}
+```
+
+`crawl_page` hỗ trợ:
+
+- Số đơn: `"crawl_page": 1`
+- Mảng số: `"crawl_page": [1, 2, 3]`
+- Chuỗi phân tách bằng dấu phẩy: `"crawl_page": "1,2,3"`
+
+Nếu không có key `crawl_page`, hoặc để rỗng (`""`, `[]`), crawler sẽ crawl toàn bộ page của site gốc như trước.
+
+### 4. Crawl detail và chapter list
+
+Sau khi có title, crawler chạy `crawl_library(...)`:
+
+1. Lấy title theo `site_key`, hoặc một title nếu có `--manga-id`.
+2. Mở trang detail của title.
+3. Lấy description nếu config có `detail.description`.
+4. Lấy danh sách chapter bằng:
+   - `detail.chapters.link_selector`
+   - `detail.chapters.title_sources`
+   - optional `detail.chapters.published`
+   - optional `source_id_query_param` hoặc `source_id_regex`
+5. Upsert vào `manga_chapters`.
+6. Nếu không có `--crawl-images`, dừng ở đây và set status `chapters_completed`.
+
+### 5. Crawl ảnh chapter
+
+Nếu có `--crawl-images`, crawler sẽ crawl ảnh cho các chapter còn thiếu:
+
+1. Với từng chapter, kiểm tra `chapter_has_images`.
+2. Nếu đã có ảnh thì skip.
+3. Nếu chưa có ảnh:
+   - mở reader URL của chapter;
+   - lấy ảnh bằng `reader.image_selector`;
+   - lấy src bằng `reader.image_attrs`.
+4. Nếu site không lưu local:
+   - lưu URL trực tiếp vào `chapter_images.src`.
+5. Nếu site lưu local:
+   - tải ảnh bằng `requests`;
+   - gửi `Referer` là chapter URL;
+   - lưu vào `{storage_root}/chapters/{chapter_id}/00000.ext`;
+   - lưu `local_path` và `content_type` vào DB.
+
+### 6. Các mode chính
+
+`--site-key mangarw`
+
+- Refresh title list.
+- Crawl detail/chapter list.
+- Không crawl ảnh.
+
+`--site-key mangarw --crawl-images`
+
+- Refresh title list.
+- Crawl detail/chapter list.
+- Crawl ảnh còn thiếu.
+
+`--site-key mangarw --manga-id 1 --skip-title-list`
+
+- Không refresh toàn bộ title list.
+- Crawl lại chapter list cho đúng title `id=1`.
+- Không crawl ảnh.
+
+`--site-key mangarw --manga-id 1 --skip-title-list --crawl-images`
+
+- Crawl lại chapter list cho title `id=1`.
+- Crawl ảnh còn thiếu của title đó.
+
+`--site-key mangarw --chapter-id 10`
+
+- Crawl ảnh cho đúng chapter local `id=10`.
+
+## Luồng từ UI Next.js
+
+Màn register config:
+
+1. Người dùng nhập JSON config.
+2. App lưu vào `crawler_sites`.
+3. Có thể bật/tắt `Local` để chọn lưu ảnh local hay dùng URL trực tiếp.
+4. Nếu bật `Local`, có thể nhập custom path. Để trống thì dùng default.
+
+Màn list titles:
+
+- `Switch Site`: đổi site config.
+- `Crawled`: lọc title đã crawl ảnh.
+- `Chapters > 0`: lọc title có chapter.
+- `Sort chapters`: sort theo số chapter tăng hoặc giảm.
+- `Load log`: đọc log crawler.
+- `Clear crawled data`: xoá chapter, ảnh, AI response, history; giữ lại title list.
+- Nút download trên từng title: crawl chapter list và ảnh còn thiếu.
+- Nút refresh trên từng title: crawl lại chapter list, không crawl ảnh.
+
+Màn đọc manga:
+
+1. App đọc `chapter_images`.
+2. Nếu site dùng local storage thì ảnh render qua `/api/images/[id]`.
+3. Nếu không thì render trực tiếp URL ảnh gốc.
+4. Người dùng chọn ảnh bằng checkbox tròn rồi mở AI chat bằng nút AI nổi.
+5. Translate image cache kết quả theo `image_id` trong DB để lần sau không gọi AI lại.

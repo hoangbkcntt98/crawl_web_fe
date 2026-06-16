@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  FormEvent,
-  PointerEvent as ReactPointerEvent,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import styles from "./MangaAiReader.module.css";
 
 type MangaImage = {
@@ -43,68 +37,48 @@ type ApiResponse = {
   error?: string;
 };
 
-const LONG_PRESS_MS = 2000;
-
 export default function MangaAiReader({ images }: { images: MangaImage[] }) {
-  const [selectedImage, setSelectedImage] = useState<MangaImage | null>(null);
+  const [checkedImageId, setCheckedImageId] = useState<string | null>(null);
+  const [chatImage, setChatImage] = useState<MangaImage | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [holdingId, setHoldingId] = useState<string | null>(null);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pointerStartRef = useRef({ x: 0, y: 0 });
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
-  const cancelLongPress = () => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = null;
-    setHoldingId(null);
-  };
-
-  const startLongPress = (
-    event: ReactPointerEvent<HTMLImageElement>,
-    image: MangaImage
-  ) => {
-    if (event.button !== 0) return;
-    cancelLongPress();
-    pointerStartRef.current = { x: event.clientX, y: event.clientY };
-    setHoldingId(image.id);
-    timerRef.current = setTimeout(() => {
-      setSelectedImage(image);
-      setMessages([]);
-      setInput("");
-      setHoldingId(null);
-      timerRef.current = null;
-      navigator.vibrate?.(40);
-    }, LONG_PRESS_MS);
-  };
-
-  const handlePointerMove = (event: ReactPointerEvent<HTMLImageElement>) => {
-    const distanceX = Math.abs(event.clientX - pointerStartRef.current.x);
-    const distanceY = Math.abs(event.clientY - pointerStartRef.current.y);
-    if (distanceX > 10 || distanceY > 10) cancelLongPress();
-  };
+  const checkedImage =
+    images.find((image) => image.id === checkedImageId) ?? null;
 
   const closeChat = () => {
     if (loading) return;
-    setSelectedImage(null);
+    setChatOpen(false);
+    setChatImage(null);
     setMessages([]);
     setInput("");
   };
 
-  useEffect(() => {
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, []);
+  const minimizeChat = () => {
+    setChatOpen(false);
+  };
+
+  const openChat = () => {
+    const targetImage = loading && chatImage ? chatImage : checkedImage ?? chatImage;
+    if (!targetImage) return;
+    if (chatImage?.id !== targetImage.id) {
+      setChatImage(targetImage);
+      setMessages([]);
+      setInput("");
+    }
+    setChatOpen(true);
+  };
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeChat();
+      if (event.key === "Escape" && chatOpen) minimizeChat();
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  });
+  }, [chatOpen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -114,7 +88,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
     action: "translate" | "chat",
     message?: string
   ) => {
-    if (!selectedImage || loading) return;
+    if (!chatImage || loading) return;
 
     const userText = action === "translate" ? "Translate image" : message;
     if (!userText) return;
@@ -131,7 +105,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action,
-          imageId: selectedImage.id,
+          imageId: chatImage.id,
           ...(action === "chat" ? { message } : {}),
         }),
       });
@@ -180,7 +154,9 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
 
   return (
     <>
-      <div className={styles.hint}>画像を2秒長押ししてAIに質問</div>
+      <div className={styles.hint}>
+        翻訳したい画像を選択して、AIボタンから質問できます。
+      </div>
       <div className={styles.pages}>
         {images.map((image) => (
           <div className={styles.imageWrap} key={image.id}>
@@ -191,40 +167,69 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
               loading={image.eager ? "eager" : "lazy"}
               onContextMenu={(event) => event.preventDefault()}
               onDragStart={(event) => event.preventDefault()}
-              onPointerCancel={cancelLongPress}
-              onPointerDown={(event) => startLongPress(event, image)}
-              onPointerLeave={cancelLongPress}
-              onPointerMove={handlePointerMove}
-              onPointerUp={cancelLongPress}
               src={image.src}
             />
-            {holdingId === image.id ? (
-              <div className={styles.holdIndicator}>
-                <span />
-                Hold to Ask AI
-              </div>
-            ) : null}
+            <label
+              className={`${styles.imagePicker} ${
+                checkedImageId === image.id ? styles.imagePickerChecked : ""
+              }`}
+              title="Select image for AI"
+            >
+              <input
+                aria-label={`Select ${image.alt} for AI`}
+                checked={checkedImageId === image.id}
+                onChange={() =>
+                  setCheckedImageId((current) =>
+                    current === image.id ? null : image.id
+                  )
+                }
+                type="checkbox"
+              />
+              <span />
+            </label>
           </div>
         ))}
       </div>
 
-      {selectedImage ? (
+      <button
+        aria-label={chatOpen ? "AI chat is open" : "Open AI chat"}
+        className={`${styles.aiFab} ${loading ? styles.aiFabLoading : ""}`}
+        disabled={!checkedImage && !chatImage}
+        onClick={openChat}
+        title={
+          checkedImage || chatImage
+            ? "Ask AI"
+            : "Select an image before asking AI"
+        }
+        type="button"
+      >
+        AI
+      </button>
+
+      {chatOpen && chatImage ? (
         <div
           aria-label="Ask AI"
           aria-modal="true"
           className={styles.backdrop}
           onMouseDown={(event) => {
-            if (event.target === event.currentTarget) closeChat();
+            if (event.target === event.currentTarget) minimizeChat();
           }}
           role="dialog"
         >
           <section className={styles.chatPanel}>
             <header className={styles.chatHeader}>
-              <img alt="" src={selectedImage.src} />
+              <img alt="" src={chatImage.src} />
               <div>
                 <strong>Ask AI</strong>
                 <span>質問はベトナム語で回答されます</span>
               </div>
+              <button
+                aria-label="Minimize"
+                onClick={minimizeChat}
+                type="button"
+              >
+                −
+              </button>
               <button
                 aria-label="Close"
                 disabled={loading}

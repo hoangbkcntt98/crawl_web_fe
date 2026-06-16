@@ -21,6 +21,7 @@ type ImageRecord = {
   local_path: string | null;
   chapter_id: string;
   manga_title_id: string;
+  store_images_locally: boolean;
 };
 
 type ApiResponse = {
@@ -77,10 +78,14 @@ export async function POST(request: Request) {
        i.src,
        i.local_path,
        i.chapter_id,
-       c.manga_title_id
+       c.manga_title_id,
+       s.store_images_locally
      FROM chapter_images i
      JOIN manga_chapters c ON c.id = i.chapter_id
-     WHERE i.id = $1 AND i.local_path IS NOT NULL`,
+     JOIN manga_titles m ON m.id = c.manga_title_id
+     JOIN crawler_sites s ON s.site_key = m.site_key
+     WHERE i.id = $1
+       AND (s.store_images_locally = FALSE OR i.local_path IS NOT NULL)`,
     [body.imageId]
   );
   const image = imageResult.rows[0];
@@ -136,7 +141,7 @@ export async function POST(request: Request) {
           {
             type: "image_url",
             image_url: {
-              url: image.local_path
+              url: image.store_images_locally && image.local_path
                 ? new URL(`/api/images/${image.id}`, request.url).toString()
                 : image.src,
             },

@@ -1,13 +1,26 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-export default function CrawlButton({ siteKey }: { siteKey: string }) {
+const NO_CHAPTERS_MESSAGE = "No chapters found for full title crawl";
+const NO_CHAPTERS_ALERT =
+  "チャプターが見つかりませんでした。タイトル一覧は表示できます。";
+
+export default function CrawlButton({
+  compact = false,
+  showStart = true,
+  siteKey,
+}: {
+  compact?: boolean;
+  showStart?: boolean;
+  siteKey: string;
+}) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [log, setLog] = useState("");
   const [clearing, setClearing] = useState(false);
+  const warningShownRef = useRef(false);
 
   useEffect(() => {
     const interval = window.setInterval(async () => {
@@ -17,6 +30,17 @@ export default function CrawlButton({ siteKey }: { siteKey: string }) {
           { cache: "no-store" }
         );
         const data = await response.json();
+
+        const noChaptersWarning = data.site?.crawl_error?.includes(
+          NO_CHAPTERS_MESSAGE
+        );
+        if (data.site?.crawl_status === "failed" && noChaptersWarning) {
+          if (!warningShownRef.current) {
+            window.alert(NO_CHAPTERS_ALERT);
+            warningShownRef.current = true;
+          }
+          return;
+        }
 
         if (response.status === 404 || data.site?.crawl_status === "failed") {
           router.replace("/");
@@ -83,46 +107,96 @@ export default function CrawlButton({ siteKey }: { siteKey: string }) {
   }
 
   return (
-    <div style={{ marginBottom: 24 }}>
+    <div style={{ marginBottom: compact ? 0 : 24 }}>
+      {showStart ? (
+        <button
+          onClick={startCrawl}
+          style={{
+            padding: "10px 16px",
+            borderRadius: 8,
+            border: "1px solid #333",
+            cursor: "pointer",
+            marginRight: 8,
+          }}
+        >
+          Crawl now
+        </button>
+      ) : null}
+
       <button
-        onClick={startCrawl}
+        aria-label="Load log"
+        onClick={loadLog}
+        title="Load log"
         style={{
-          padding: "10px 16px",
+          width: 40,
+          height: 40,
+          padding: 0,
           borderRadius: 8,
           border: "1px solid #333",
           cursor: "pointer",
           marginRight: 8,
+          display: "inline-grid",
+          placeItems: "center",
         }}
       >
-        Crawl now
+        <svg
+          aria-hidden="true"
+          style={{
+            width: 18,
+            height: 18,
+            fill: "none",
+            stroke: "currentColor",
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            strokeWidth: 1.8,
+          }}
+          viewBox="0 0 24 24"
+        >
+          <path d="M7 4h10" />
+          <path d="M7 20h10" />
+          <path d="M6 8h12" />
+          <path d="M6 12h9" />
+          <path d="M6 16h12" />
+        </svg>
       </button>
 
       <button
-        onClick={loadLog}
-        style={{
-          padding: "10px 16px",
-          borderRadius: 8,
-          border: "1px solid #333",
-          cursor: "pointer",
-        }}
-      >
-        Load log
-      </button>
-
-      <button
+        aria-label={clearing ? "Clearing crawled data" : "Clear crawled data"}
         disabled={clearing}
         onClick={clearCrawledData}
+        title="Clear crawled data"
         style={{
-          padding: "10px 16px",
+          width: 40,
+          height: 40,
+          padding: 0,
           borderRadius: 8,
           border: "1px solid rgba(255, 91, 112, 0.55)",
           background: "rgba(128, 25, 42, 0.22)",
           color: "#ff9aaa",
           cursor: clearing ? "wait" : "pointer",
-          marginLeft: 8,
+          display: "inline-grid",
+          placeItems: "center",
         }}
       >
-        {clearing ? "Clearing..." : "Clear crawled data"}
+        <svg
+          aria-hidden="true"
+          style={{
+            width: 18,
+            height: 18,
+            fill: "none",
+            stroke: "currentColor",
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            strokeWidth: 1.8,
+          }}
+          viewBox="0 0 24 24"
+        >
+          <path d="M4 7h16" />
+          <path d="M10 11v6" />
+          <path d="M14 11v6" />
+          <path d="M6 7l1 14h10l1-14" />
+          <path d="M9 7V4h6v3" />
+        </svg>
       </button>
 
       {message && <p>{message}</p>}

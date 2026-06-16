@@ -44,6 +44,8 @@ export default function TitleCrawlButton({
 
     if (data.status === "failed") {
       setMessage(data.error || "Crawl failed");
+    } else if (data.status === "no_chapters") {
+      setMessage("");
     }
 
     return data.status as string;
@@ -57,8 +59,12 @@ export default function TitleCrawlButton({
     const interval = window.setInterval(() => {
       void refreshProgress()
         .then((nextStatus) => {
-          if (nextStatus === "no_changes") {
-            window.alert("新しいチャプターはありません。");
+          if (nextStatus === "no_changes" || nextStatus === "no_chapters") {
+            window.alert(
+              nextStatus === "no_chapters"
+                ? "チャプターが見つかりませんでした。"
+                : "新しいチャプターはありません。"
+            );
           }
 
           if (nextStatus !== "crawling") {
@@ -95,10 +101,33 @@ export default function TitleCrawlButton({
     }
   }
 
+  async function recrawlChapters() {
+    setStatus("crawling");
+    setMessage("Recrawling chapters...");
+
+    try {
+      const response = await fetch(`/api/titles/${titleId}/chapters`, {
+        method: "POST",
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Chapter crawl failed");
+      }
+
+      setStatus(data.status);
+    } catch (error) {
+      setStatus("failed");
+      setMessage(
+        error instanceof Error ? error.message : "Chapter crawl failed"
+      );
+    }
+  }
+
   const crawling = status === "crawling";
   const done =
     status === "completed" ||
     status === "no_changes" ||
+    status === "no_chapters" ||
     (status === "idle" && isDone);
 
   return (
@@ -127,6 +156,21 @@ export default function TitleCrawlButton({
           <path d="M12 3v12" />
           <path d="m7 10 5 5 5-5" />
           <path d="M5 20h14" />
+        </svg>
+      </button>
+
+      <button
+        aria-label="Recrawl chapters"
+        disabled={crawling}
+        onClick={recrawlChapters}
+        title="Recrawl chapters"
+        type="button"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 7v5h-5" />
+          <path d="M4 17v-5h5" />
+          <path d="M18.2 9A7 7 0 0 0 6.8 6.8L4 12" />
+          <path d="M5.8 15A7 7 0 0 0 17.2 17.2L20 12" />
         </svg>
       </button>
 

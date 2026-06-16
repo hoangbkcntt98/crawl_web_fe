@@ -13,6 +13,7 @@ type Manga = {
   href: string;
   src: string | null;
   description: string | null;
+  store_images_locally: boolean;
 };
 
 type Chapter = {
@@ -36,8 +37,16 @@ export default async function MangaDetailPage({
 
   const [mangaResult, chapterResult, favoriteResult] = await Promise.all([
     pool.query<Manga>(
-      `SELECT m.id, m.site_key, m.title, m.href, m.src, d.description
+      `SELECT
+         m.id,
+         m.site_key,
+         m.title,
+         m.href,
+         m.src,
+         d.description,
+         s.store_images_locally
        FROM manga_titles m
+       JOIN crawler_sites s ON s.site_key = m.site_key
        LEFT JOIN manga_details d ON d.manga_title_id = m.id
        WHERE m.id = $1`,
       [id]
@@ -49,11 +58,15 @@ export default async function MangaDetailPage({
          c.chapter_number,
          c.source_published_at,
          c.crawled_at,
-         COUNT(i.id) FILTER (WHERE i.local_path IS NOT NULL)::int AS image_count
+         COUNT(i.id) FILTER (
+           WHERE s.store_images_locally = FALSE OR i.local_path IS NOT NULL
+         )::int AS image_count
        FROM manga_chapters c
+       JOIN manga_titles m ON m.id = c.manga_title_id
+       JOIN crawler_sites s ON s.site_key = m.site_key
        LEFT JOIN chapter_images i ON i.chapter_id = c.id
        WHERE c.manga_title_id = $1
-       GROUP BY c.id
+       GROUP BY c.id, s.store_images_locally
        ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC`,
       [id]
     ),

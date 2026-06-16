@@ -18,14 +18,19 @@ async function getProgress(id: string) {
          WHERE EXISTS (
            SELECT 1
            FROM chapter_images i
-           WHERE i.chapter_id = c.id AND i.local_path IS NOT NULL
+           WHERE i.chapter_id = c.id
+             AND (
+               s.store_images_locally = FALSE
+               OR i.local_path IS NOT NULL
+             )
          )
        )::int AS crawled
      FROM manga_titles m
+     JOIN crawler_sites s ON s.site_key = m.site_key
      LEFT JOIN manga_details d ON d.manga_title_id = m.id
      LEFT JOIN manga_chapters c ON c.manga_title_id = m.id
      WHERE m.id = $1
-     GROUP BY m.id, d.crawl_status, d.crawl_error`,
+     GROUP BY m.id, s.store_images_locally, d.crawl_status, d.crawl_error`,
     [id]
   );
 
