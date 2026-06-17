@@ -14,14 +14,17 @@
 .imageWrap {
   position: relative;
   width: 100%;
+  overflow: visible;
 }
 
 .image {
-  width: 100%;
+  width: calc(100% * var(--image-scale, 1));
+  max-width: none;
   height: auto;
   display: block;
+  margin: 0 auto;
   background: white;
-  touch-action: pan-y;
+  touch-action: pan-y pinch-zoom;
   user-select: none;
   -webkit-touch-callout: none;
 }

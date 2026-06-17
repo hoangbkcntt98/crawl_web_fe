@@ -1,6 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import {
+  CSSProperties,
+  FormEvent,
+  TouchEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import styles from "./MangaAiReader.module.css";
 
 type MangaImage = {
@@ -36,6 +43,104 @@ type ApiResponse = {
   cached?: boolean;
   error?: string;
 };
+
+const MIN_IMAGE_SCALE = 1;
+const MAX_IMAGE_SCALE = 3;
+
+function touchDistance(event: TouchEvent) {
+  const [first, second] = Array.from(event.touches);
+  if (!first || !second) return 0;
+
+  return Math.hypot(first.clientX - second.clientX, first.clientY - second.clientY);
+}
+
+function clampScale(scale: number) {
+  return Math.min(MAX_IMAGE_SCALE, Math.max(MIN_IMAGE_SCALE, scale));
+}
+
+function ZoomableMangaImage({
+  checked,
+  image,
+  onToggle,
+}: {
+  checked: boolean;
+  image: MangaImage;
+  onToggle: () => void;
+}) {
+  const [scale, setScale] = useState(MIN_IMAGE_SCALE);
+  const pinchRef = useRef<{ distance: number; scale: number } | null>(null);
+
+  const imageStyle = {
+    "--image-scale": scale,
+  } as CSSProperties;
+
+  const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 2) return;
+
+    pinchRef.current = {
+      distance: touchDistance(event),
+      scale,
+    };
+  };
+
+  const handleTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length !== 2 || !pinchRef.current) return;
+
+    event.preventDefault();
+    const nextDistance = touchDistance(event);
+    if (nextDistance <= 0 || pinchRef.current.distance <= 0) return;
+
+    const nextScale =
+      pinchRef.current.scale * (nextDistance / pinchRef.current.distance);
+    setScale(clampScale(nextScale));
+  };
+
+  const handleTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length < 2) {
+      pinchRef.current = null;
+    }
+  };
+
+  return (
+    <div
+      className={styles.imageWrap}
+      onDoubleClick={() =>
+        setScale((current) =>
+          current > MIN_IMAGE_SCALE ? MIN_IMAGE_SCALE : MAX_IMAGE_SCALE
+        )
+      }
+      onTouchCancel={handleTouchEnd}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
+      onTouchStart={handleTouchStart}
+      style={imageStyle}
+    >
+      <img
+        alt={image.alt}
+        className={styles.image}
+        decoding="async"
+        loading={image.eager ? "eager" : "lazy"}
+        onContextMenu={(event) => event.preventDefault()}
+        onDragStart={(event) => event.preventDefault()}
+        src={image.src}
+      />
+      <label
+        className={`${styles.imagePicker} ${
+          checked ? styles.imagePickerChecked : ""
+        }`}
+        title="Select image for AI"
+      >
+        <input
+          aria-label={`Select ${image.alt} for AI`}
+          checked={checked}
+          onChange={onToggle}
+          type="checkbox"
+        />
+        <span />
+      </label>
+    </div>
+  );
+}
 
 export default function MangaAiReader({ images }: { images: MangaImage[] }) {
   const [checkedImageId, setCheckedImageId] = useState<string | null>(null);
@@ -159,35 +264,16 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
       </div>
       <div className={styles.pages}>
         {images.map((image) => (
-          <div className={styles.imageWrap} key={image.id}>
-            <img
-              alt={image.alt}
-              className={styles.image}
-              decoding="async"
-              loading={image.eager ? "eager" : "lazy"}
-              onContextMenu={(event) => event.preventDefault()}
-              onDragStart={(event) => event.preventDefault()}
-              src={image.src}
-            />
-            <label
-              className={`${styles.imagePicker} ${
-                checkedImageId === image.id ? styles.imagePickerChecked : ""
-              }`}
-              title="Select image for AI"
-            >
-              <input
-                aria-label={`Select ${image.alt} for AI`}
-                checked={checkedImageId === image.id}
-                onChange={() =>
-                  setCheckedImageId((current) =>
-                    current === image.id ? null : image.id
-                  )
-                }
-                type="checkbox"
-              />
-              <span />
-            </label>
-          </div>
+          <ZoomableMangaImage
+            checked={checkedImageId === image.id}
+            image={image}
+            key={image.id}
+            onToggle={() =>
+              setCheckedImageId((current) =>
+                current === image.id ? null : image.id
+              )
+            }
+          />
         ))}
       </div>
 
