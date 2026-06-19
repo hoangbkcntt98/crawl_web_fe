@@ -42,7 +42,7 @@ export default function CrawlButton({
           return;
         }
 
-        if (response.status === 404 || data.site?.crawl_status === "failed") {
+        if (response.status === 404) {
           router.replace("/");
           router.refresh();
         }

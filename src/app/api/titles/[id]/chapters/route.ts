@@ -1,5 +1,6 @@
 import { pool } from "@/lib/db";
 import { spawnCrawler } from "@/lib/crawler";
+import { removeStoredChapterImages } from "@/lib/imageStorage";
 
 export async function POST(
   _request: Request,
@@ -83,5 +84,136 @@ export async function POST(
     const message =
       error instanceof Error ? error.message : "Could not crawl chapters";
     return Response.json({ ok: false, message }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  if (!/^\d+$/.test(id)) {
+    return Response.json(
+      { ok: false, message: "Invalid title ID" },
+      { status: 400 }
+    );
+  }
+
+  let body: { confirmation?: string } = {};
+  try {
+    body = (await request.json()) as { confirmation?: string };
+  } catch {
+    return Response.json(
+      { ok: false, message: "Invalid request" },
+      { status: 400 }
+    );
+  }
+
+  if (body.confirmation !== "DELETE_TITLE_CHAPTERS") {
+    return Response.json(
+      { ok: false, message: "Confirmation does not match" },
+      { status: 400 }
+    );
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const titleResult = await client.query<{
+      title: string;
+      crawl_status: string | null;
+      local_image_storage_path: string | null;
+    }>(
+      `SELECT
+         m.title,
+         d.crawl_status,
+         s.local_image_storage_path
+       FROM manga_titles m
+       JOIN crawler_sites s ON s.site_key = m.site_key
+       LEFT JOIN manga_details d ON d.manga_title_id = m.id
+       WHERE m.id = $1
+       FOR UPDATE OF m`,
+      [id]
+    );
+    const title = titleResult.rows[0];
+    if (!title) {
+      await client.query("ROLLBACK");
+      return Response.json(
+        { ok: false, message: "Title not found" },
+        { status: 404 }
+      );
+    }
+
+    const countsResult = await client.query<{
+      chapters: number;
+      images: number;
+    }>(
+      `SELECT
+         COUNT(DISTINCT c.id)::int AS chapters,
+         COUNT(DISTINCT i.id)::int AS images
+       FROM manga_chapters c
+       LEFT JOIN chapter_images i ON i.chapter_id = c.id
+       WHERE c.manga_title_id = $1`,
+      [id]
+    );
+    const counts = countsResult.rows[0] ?? { chapters: 0, images: 0 };
+    const localPathsResult = await client.query<{ local_path: string }>(
+      `SELECT local_path
+       FROM chapter_images i
+       JOIN manga_chapters c ON c.id = i.chapter_id
+       WHERE c.manga_title_id = $1
+         AND i.local_path IS NOT NULL`,
+      [id]
+    );
+
+    await client.query("DELETE FROM manga_chapters WHERE manga_title_id = $1", [
+      id,
+    ]);
+    await client.query(
+      `INSERT INTO manga_details (
+         manga_title_id,
+         crawl_status,
+         crawl_error,
+         images_crawled_at,
+         updated_at
+       )
+       VALUES ($1, 'idle', NULL, NULL, NOW())
+       ON CONFLICT (manga_title_id) DO UPDATE SET
+         crawl_status = 'idle',
+         crawl_error = NULL,
+         images_crawled_at = NULL,
+         updated_at = NOW()`,
+      [id]
+    );
+    await client.query("COMMIT");
+
+    await removeStoredChapterImages(
+      localPathsResult.rows.map((row) => row.local_path),
+      [title.local_image_storage_path || undefined].filter(
+        (path): path is string => Boolean(path)
+      )
+    ).catch((error) => {
+      console.error(`Could not remove local images for title ${id}`, error);
+    });
+
+    return Response.json({
+      ok: true,
+      message: `${title.title}: クロール済みチャプターを削除しました。`,
+      deleted: counts,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    return Response.json(
+      {
+        ok: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not delete crawled chapters",
+      },
+      { status: 500 }
+    );
+  } finally {
+    client.release();
   }
 }

@@ -4,6 +4,7 @@ import CrawlButton from "@/components/CrawlButton";
 import HomeHeaderActions from "@/components/HomeHeaderActions";
 import SiteRegistry from "@/components/SiteRegistry";
 import SiteSwitcher from "@/components/SiteSwitcher";
+import TitleCoverImage from "@/components/TitleCoverImage";
 import TitleCrawlButton from "@/components/TitleCrawlButton";
 import { imageStorageRoot } from "@/lib/imageStorage";
 import Link from "next/link";
@@ -19,6 +20,9 @@ type MangaTitle = {
   crawled_chapter_count: number;
   images_crawled_at: string | null;
   crawl_status: string;
+  last_read_chapter_id: string | null;
+  last_read_chapter_name: string | null;
+  last_read_at: string | null;
 };
 
 type HomeProps = {
@@ -47,7 +51,6 @@ export const revalidate = 0;
 
 const PAGE_SIZE = 24;
 const MAX_VISIBLE_PAGES = 7;
-const NO_CHAPTERS_MESSAGE = "No chapters found for full title crawl";
 
 function getPageNumber(page: string | string[] | undefined) {
   const rawPage = Array.isArray(page) ? page[0] : page;
@@ -56,10 +59,6 @@ function getPageNumber(page: string | string[] | undefined) {
   return Number.isFinite(parsedPage) && parsedPage > 0
     ? Math.floor(parsedPage)
     : 1;
-}
-
-function isNoChaptersWarning(site: CrawlerSite | undefined) {
-  return Boolean(site?.crawl_error?.includes(NO_CHAPTERS_MESSAGE));
 }
 
 type ChapterSort = "chapters_asc" | "chapters_desc";
@@ -86,11 +85,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const sites = sitesResult.rows;
   const activeSite = sites.find((item) => item.site_key === selectedSite);
 
-  if (
-    !selectedSite ||
-    !activeSite ||
-    (activeSite.crawl_status === "failed" && !isNoChaptersWarning(activeSite))
-  ) {
+  if (!selectedSite || !activeSite) {
     return (
       <SiteRegistry
         defaultImageStoragePath={imageStorageRoot}
@@ -148,7 +143,29 @@ export default async function Home({ searchParams }: HomeProps) {
                 OR i.local_path IS NOT NULL
               )
           )
-        )::int AS crawled_chapter_count
+        )::int AS crawled_chapter_count,
+        (
+          SELECT h.chapter_id::text
+          FROM reading_history h
+          WHERE h.manga_title_id = m.id
+          ORDER BY h.last_read_at DESC
+          LIMIT 1
+        ) AS last_read_chapter_id,
+        (
+          SELECT rc.name
+          FROM reading_history h
+          JOIN manga_chapters rc ON rc.id = h.chapter_id
+          WHERE h.manga_title_id = m.id
+          ORDER BY h.last_read_at DESC
+          LIMIT 1
+        ) AS last_read_chapter_name,
+        (
+          SELECT h.last_read_at::text
+          FROM reading_history h
+          WHERE h.manga_title_id = m.id
+          ORDER BY h.last_read_at DESC
+          LIMIT 1
+        ) AS last_read_at
       FROM manga_titles m
       JOIN crawler_sites s ON s.site_key = m.site_key
       LEFT JOIN manga_details d ON d.manga_title_id = m.id
@@ -457,34 +474,11 @@ export default async function Home({ searchParams }: HomeProps) {
               >
                 <Link className={styles.cardLink} href={`/manga/${item.id}`}>
                   <div className={styles.cover} style={{ position: "relative" }}>
-                    {item.src ? (
-                      <img
-                        className={styles.coverImage}
-                        src={item.src}
-                        alt={item.title}
-                        style={{
-                          width: "100%",
-                          aspectRatio: "3 / 4",
-                          objectFit: "cover",
-                          display: "block",
-                        }}
-                      />
-                    ) : (
-                      <div
-                        className={styles.coverPlaceholder}
-                        style={{
-                          width: "100%",
-                          aspectRatio: "3 / 4",
-                          display: "grid",
-                          placeItems: "center",
-                          background: "linear-gradient(135deg, #1b2340 0%, #111827 100%)",
-                          color: "#95a7cb",
-                          fontSize: 12,
-                        }}
-                      >
-                        No image
-                      </div>
-                    )}
+                    <TitleCoverImage
+                      alt={item.title}
+                      className={styles.coverImage}
+                      src={item.src}
+                    />
 
                     <span
                       className={styles.status}
@@ -539,6 +533,22 @@ export default async function Home({ searchParams }: HomeProps) {
                     </p>
                   </div>
                 </Link>
+
+                {item.last_read_chapter_id ? (
+                  <Link
+                    className={styles.lastReadLink}
+                    href={`/read/${item.last_read_chapter_id}`}
+                    title={
+                      item.last_read_at
+                        ? `Last read: ${new Date(
+                            item.last_read_at
+                          ).toLocaleString("ja-JP")}`
+                        : undefined
+                    }
+                  >
+                    前回: {item.last_read_chapter_name ?? "読書を続ける"}
+                  </Link>
+                ) : null}
 
                 <TitleCrawlButton
                   className={styles.titleCrawlAction}

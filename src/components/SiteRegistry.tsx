@@ -575,22 +575,14 @@ export default function SiteRegistry({
                         </div>
                       ) : null}
                       <Link
-                        aria-disabled={
-                          site.crawl_status === "failed" && !noChaptersWarning
-                        }
                         className={styles.viewButton}
                         href={`/?site=${encodeURIComponent(site.site_key)}`}
-                        onClick={(event) => {
+                        onClick={() => {
                           if (
                             site.crawl_status === "failed" &&
                             noChaptersWarning
                           ) {
                             window.alert(NO_CHAPTERS_ALERT);
-                            return;
-                          }
-
-                          if (site.crawl_status === "failed") {
-                            event.preventDefault();
                           }
                         }}
                       >

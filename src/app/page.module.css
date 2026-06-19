@@ -17,10 +17,34 @@
   font-weight: 800;
 }
 
+.mangaTitle {
+  display: -webkit-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .cardLink {
   display: block;
   color: inherit;
   text-decoration: none;
+}
+
+.lastReadLink {
+  margin: 0 12px 8px;
+  display: block;
+  overflow: hidden;
+  color: #f3c879;
+  font-size: 11px;
+  font-weight: 800;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lastReadLink:hover {
+  color: #ffe0a3;
 }
 
 .listToolbar {
@@ -108,6 +132,13 @@
   min-height: 42px;
   padding: 0 12px 12px;
   display: flex;
+  align-items: stretch;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.titleCrawlAction :global(.title-action-icons) {
+  display: flex;
   align-items: center;
   gap: 7px;
 }
@@ -151,6 +182,12 @@
   color: #63d7a5;
 }
 
+.titleCrawlAction button[data-danger="true"] {
+  border-color: rgba(255, 91, 112, 0.45);
+  background: rgba(128, 25, 42, 0.18);
+  color: #ff9aaa;
+}
+
 .titleCrawlAction button:disabled {
   cursor: wait;
   opacity: 0.65;
@@ -161,10 +198,36 @@
 }
 
 .titleCrawlAction :global(.crawl-progress) {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
   color: #8fbbff;
   font-size: 11px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.titleCrawlAction :global(.crawl-progress-track) {
+  height: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(74, 144, 255, 0.16);
+  box-shadow: inset 0 0 0 1px rgba(74, 144, 255, 0.18);
+}
+
+.titleCrawlAction :global(.crawl-progress-track span) {
+  height: 100%;
+  display: block;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #2d7dff 0%, #63d7a5 100%);
+  transition: width 220ms ease;
+}
+
+.titleCrawlAction :global(.crawl-progress-label) {
+  color: #a9c7ff;
+  font-variant-numeric: tabular-nums;
 }
 
 .titleCrawlAction small {
@@ -345,11 +408,19 @@
     gap: 5px;
   }
 
+  .titleCrawlAction :global(.title-action-icons) {
+    gap: 5px;
+  }
+
   .titleCrawlAction button,
   .titleCrawlAction :global(.title-view-button) {
     width: 30px;
     height: 30px;
     border-radius: 7px;
+  }
+
+  .titleCrawlAction :global(.title-view-button) {
+    display: none;
   }
 
   .titleCrawlAction button svg,
@@ -360,21 +431,27 @@
 
   .titleCrawlAction :global(.crawl-progress) {
     font-size: 9px;
+    line-height: 1.2;
+  }
+
+  .titleCrawlAction :global(.crawl-progress-track) {
+    height: 5px;
   }
 
   .titleCrawlAction small {
     display: none;
   }
 
+  .lastReadLink {
+    margin: 0 0 6px;
+    font-size: 9px;
+  }
+
   .mangaTitle {
     min-height: 0 !important;
-    display: -webkit-box;
-    overflow: hidden;
     font-size: 13px !important;
     line-height: 1.35 !important;
     letter-spacing: -0.25px;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
   }
 
   .updatedAt {
