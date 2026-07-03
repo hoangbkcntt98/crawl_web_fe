@@ -546,7 +546,7 @@ export default async function Home({ searchParams }: HomeProps) {
                         : undefined
                     }
                   >
-                    前回: {item.last_read_chapter_name ?? "読書を続ける"}
+                    続きを読む: {item.last_read_chapter_name ?? "前回のチャプター"}
                   </Link>
                 ) : null}
 

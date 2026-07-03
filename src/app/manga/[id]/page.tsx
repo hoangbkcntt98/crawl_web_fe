@@ -25,6 +25,12 @@ type Chapter = {
   image_count: number;
 };
 
+type LastReadChapter = {
+  id: string;
+  name: string;
+  last_read_at: Date;
+};
+
 export const dynamic = "force-dynamic";
 
 export default async function MangaDetailPage({
@@ -35,46 +41,58 @@ export default async function MangaDetailPage({
   const { id } = await params;
   if (!/^\d+$/.test(id)) notFound();
 
-  const [mangaResult, chapterResult, favoriteResult] = await Promise.all([
-    pool.query<Manga>(
-      `SELECT
-         m.id,
-         m.site_key,
-         m.title,
-         m.href,
-         m.src,
-         d.description,
-         s.store_images_locally
-       FROM manga_titles m
-       JOIN crawler_sites s ON s.site_key = m.site_key
-       LEFT JOIN manga_details d ON d.manga_title_id = m.id
-       WHERE m.id = $1`,
-      [id]
-    ),
-    pool.query<Chapter>(
-      `SELECT
-         c.id,
-         c.name,
-         c.chapter_number,
-         c.source_published_at,
-         c.crawled_at,
-         COUNT(i.id) FILTER (
-           WHERE s.store_images_locally = FALSE OR i.local_path IS NOT NULL
-         )::int AS image_count
-       FROM manga_chapters c
-       JOIN manga_titles m ON m.id = c.manga_title_id
-       JOIN crawler_sites s ON s.site_key = m.site_key
-       LEFT JOIN chapter_images i ON i.chapter_id = c.id
-       WHERE c.manga_title_id = $1
-       GROUP BY c.id, s.store_images_locally
-       ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC`,
-      [id]
-    ),
-    pool.query(
-      "SELECT 1 FROM manga_favorites WHERE manga_title_id = $1",
-      [id]
-    ),
-  ]);
+  const [mangaResult, chapterResult, favoriteResult, historyResult] =
+    await Promise.all([
+      pool.query<Manga>(
+        `SELECT
+           m.id,
+           m.site_key,
+           m.title,
+           m.href,
+           m.src,
+           d.description,
+           s.store_images_locally
+         FROM manga_titles m
+         JOIN crawler_sites s ON s.site_key = m.site_key
+         LEFT JOIN manga_details d ON d.manga_title_id = m.id
+         WHERE m.id = $1`,
+        [id]
+      ),
+      pool.query<Chapter>(
+        `SELECT
+           c.id,
+           c.name,
+           c.chapter_number,
+           c.source_published_at,
+           c.crawled_at,
+           COUNT(i.id) FILTER (
+             WHERE s.store_images_locally = FALSE OR i.local_path IS NOT NULL
+           )::int AS image_count
+         FROM manga_chapters c
+         JOIN manga_titles m ON m.id = c.manga_title_id
+         JOIN crawler_sites s ON s.site_key = m.site_key
+         LEFT JOIN chapter_images i ON i.chapter_id = c.id
+         WHERE c.manga_title_id = $1
+         GROUP BY c.id, s.store_images_locally
+         ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC`,
+        [id]
+      ),
+      pool.query(
+        "SELECT 1 FROM manga_favorites WHERE manga_title_id = $1",
+        [id]
+      ),
+      pool.query<LastReadChapter>(
+        `SELECT
+           c.id,
+           c.name,
+           h.last_read_at
+         FROM reading_history h
+         JOIN manga_chapters c ON c.id = h.chapter_id
+         WHERE h.manga_title_id = $1
+         LIMIT 1`,
+        [id]
+      ),
+    ]);
 
   const manga = mangaResult.rows[0];
   if (!manga) notFound();
@@ -82,6 +100,8 @@ export default async function MangaDetailPage({
   const chapters = chapterResult.rows;
   const readableChapters = chapters.filter((chapter) => chapter.image_count > 0);
   const firstChapter = readableChapters[0] ?? chapters[0];
+  const lastReadChapter = historyResult.rows[0] ?? null;
+  const readTarget = lastReadChapter ?? firstChapter;
 
   return (
     <main className={styles.page}>
@@ -105,14 +125,19 @@ export default async function MangaDetailPage({
                 <div className={styles.coverFallback}>No image</div>
               )}
 
-              {firstChapter && (
+              {readTarget && (
                 <div className={styles.bookActions}>
                   <Link
                     className={styles.readButton}
-                    href={`/read/${firstChapter.id}`}
+                    href={`/read/${readTarget.id}`}
                   >
-                    ◉　今すぐ読む
+                    ◉　{lastReadChapter ? "続きを読む" : "今すぐ読む"}
                   </Link>
+                  {lastReadChapter ? (
+                    <div className={styles.continueNote}>
+                      前回: {lastReadChapter.name}
+                    </div>
+                  ) : null}
                   {readableChapters.length > 0 && (
                     <a
                       className={styles.epubButton}

@@ -85,6 +85,16 @@
   color: #9fc2ff;
 }
 
+.continueNote {
+  overflow: hidden;
+  color: #f3c879;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .info h1 {
   margin: 3px 0 8px;
   font-size: 31px;
@@ -293,6 +303,10 @@
   .readButton {
     height: 38px;
     font-size: 12px;
+  }
+
+  .continueNote {
+    font-size: 10px;
   }
 
   .info h1 {

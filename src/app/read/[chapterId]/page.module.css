@@ -48,6 +48,14 @@
   backdrop-filter: blur(12px);
 }
 
+.bottomChapterNav {
+  margin: 34px auto 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  background: rgba(17, 26, 42, 0.96);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+
 .navInner {
   min-height: 64px;
   display: flex;
@@ -148,5 +156,10 @@
 
   .viewer {
     padding: 20px 0 50px;
+  }
+
+  .bottomChapterNav {
+    margin: 24px 10px 0;
+    border-radius: 12px;
   }
 }

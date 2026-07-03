@@ -78,6 +78,40 @@ export default async function ReaderPage({
     currentIndex >= 0 && currentIndex < chapters.length - 1
       ? chapters[currentIndex + 1]
       : null;
+  const renderChapterNavigator = (className: string) => (
+    <nav className={className}>
+      <div className={styles.navInner}>
+        <Link className={styles.homeButton} href="/">
+          ◆
+        </Link>
+        {previous ? (
+          <Link className={styles.arrowButton} href={`/read/${previous.id}`}>
+            ‹
+          </Link>
+        ) : (
+          <span className={`${styles.arrowButton} ${styles.inactive}`}>‹</span>
+        )}
+        <ChapterSelect
+          chapters={chapters}
+          className={styles.select}
+          currentChapterId={chapter.id}
+        />
+        {next ? (
+          <Link className={styles.arrowButton} href={`/read/${next.id}`}>
+            ›
+          </Link>
+        ) : (
+          <span className={`${styles.arrowButton} ${styles.inactive}`}>›</span>
+        )}
+        <Link
+          className={styles.homeButton}
+          href={`/manga/${chapter.manga_title_id}`}
+        >
+          ♧
+        </Link>
+      </div>
+    </nav>
+  );
 
   return (
     <main className={styles.page}>
@@ -98,38 +132,7 @@ export default async function ReaderPage({
         </div>
       </header>
 
-      <nav className={styles.chapterNav}>
-        <div className={styles.navInner}>
-          <Link className={styles.homeButton} href="/">
-            ◆
-          </Link>
-          {previous ? (
-            <Link className={styles.arrowButton} href={`/read/${previous.id}`}>
-              ‹
-            </Link>
-          ) : (
-            <span className={`${styles.arrowButton} ${styles.inactive}`}>‹</span>
-          )}
-          <ChapterSelect
-            chapters={chapters}
-            className={styles.select}
-            currentChapterId={chapter.id}
-          />
-          {next ? (
-            <Link className={styles.arrowButton} href={`/read/${next.id}`}>
-              ›
-            </Link>
-          ) : (
-            <span className={`${styles.arrowButton} ${styles.inactive}`}>›</span>
-          )}
-          <Link
-            className={styles.homeButton}
-            href={`/manga/${chapter.manga_title_id}`}
-          >
-            ♧
-          </Link>
-        </div>
-      </nav>
+      {renderChapterNavigator(styles.chapterNav)}
 
       <div className={styles.viewer}>
         <p>↓ スクロールして読む</p>
@@ -149,6 +152,7 @@ export default async function ReaderPage({
             Chapter này chưa có ảnh. Hãy chạy crawler lại.
           </div>
         )}
+        {renderChapterNavigator(styles.bottomChapterNav)}
       </div>
     </main>
   );
