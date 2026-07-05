@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { apiPath } from "@/lib/paths";
 
 export default function FavoriteButton({
   mangaId,
@@ -19,7 +20,7 @@ export default function FavoriteButton({
   async function toggleFavorite() {
     setLoading(true);
     try {
-      const response = await fetch(`/api/favorites/${mangaId}`, {
+      const response = await fetch(apiPath(`/api/favorites/${mangaId}`), {
         method: "POST",
       });
       const data = await response.json();

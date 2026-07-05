@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { apiPath } from "@/lib/paths";
 
 export default function ChapterCrawlButton({
   chapterId,
@@ -21,9 +22,12 @@ export default function ChapterCrawlButton({
 
     const interval = window.setInterval(async () => {
       try {
-        const response = await fetch(`/api/chapters/${chapterId}/crawl`, {
-          cache: "no-store",
-        });
+        const response = await fetch(
+          apiPath(`/api/chapters/${chapterId}/crawl`),
+          {
+            cache: "no-store",
+          }
+        );
         const data = await response.json();
         if (!response.ok) throw new Error(data.message || "Crawl failed");
 
@@ -48,9 +52,12 @@ export default function ChapterCrawlButton({
     setMessage("");
 
     try {
-      const response = await fetch(`/api/chapters/${chapterId}/crawl`, {
-        method: "POST",
-      });
+      const response = await fetch(
+        apiPath(`/api/chapters/${chapterId}/crawl`),
+        {
+          method: "POST",
+        }
+      );
       const data = await response.json();
 
       if (!response.ok) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { apiPath } from "@/lib/paths";
 
 export default function ReadingHistoryTracker({
   chapterId,
@@ -8,7 +9,7 @@ export default function ReadingHistoryTracker({
   chapterId: string;
 }) {
   useEffect(() => {
-    void fetch(`/api/history/${chapterId}`, { method: "POST" });
+    void fetch(apiPath(`/api/history/${chapterId}`), { method: "POST" });
   }, [chapterId]);
 
   return null;

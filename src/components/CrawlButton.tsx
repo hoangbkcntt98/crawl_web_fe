@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { apiPath } from "@/lib/paths";
 
 const NO_CHAPTERS_MESSAGE = "No chapters found for full title crawl";
 const NO_CHAPTERS_ALERT =
@@ -26,7 +27,7 @@ export default function CrawlButton({
     const interval = window.setInterval(async () => {
       try {
         const response = await fetch(
-          `/api/sites/${encodeURIComponent(siteKey)}`,
+          apiPath(`/api/sites/${encodeURIComponent(siteKey)}`),
           { cache: "no-store" }
         );
         const data = await response.json();
@@ -57,16 +58,19 @@ export default function CrawlButton({
   async function startCrawl() {
     setMessage("Starting crawler...");
 
-    const res = await fetch(`/api/sites/${encodeURIComponent(siteKey)}/crawl`, {
-      method: "POST",
-    });
+    const res = await fetch(
+      apiPath(`/api/sites/${encodeURIComponent(siteKey)}/crawl`),
+      {
+        method: "POST",
+      }
+    );
 
     const data = await res.json();
     setMessage(data.message || "Done");
   }
 
   async function loadLog() {
-    const res = await fetch("/api/crawl");
+    const res = await fetch(apiPath("/api/crawl"));
     const data = await res.json();
     setLog(data.log || "");
   }
@@ -81,7 +85,7 @@ export default function CrawlButton({
     setMessage("クロール済みデータを削除しています...");
 
     try {
-      const res = await fetch("/api/crawl", {
+      const res = await fetch(apiPath("/api/crawl"), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirmation: "CLEAR_CRAWLED_DATA" }),

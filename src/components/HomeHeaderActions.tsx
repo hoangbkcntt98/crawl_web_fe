@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { appPath } from "@/lib/paths";
 import styles from "./HomeHeaderActions.module.css";
 
 export default function HomeHeaderActions({
@@ -25,7 +26,7 @@ export default function HomeHeaderActions({
 
   return (
     <div className={styles.actions}>
-      <form action="/" className={styles.desktopSearch} method="get">
+      <form action={appPath("/")} className={styles.desktopSearch} method="get">
         <input name="site" type="hidden" value={siteKey} />
         {crawledOnly ? <input name="filter" type="hidden" value="crawled" /> : null}
         {hasChaptersOnly ? (
@@ -78,7 +79,7 @@ export default function HomeHeaderActions({
       </div>
 
       {mobilePanel === "search" && (
-        <form action="/" className={styles.mobileSearch} method="get">
+        <form action={appPath("/")} className={styles.mobileSearch} method="get">
           <input name="site" type="hidden" value={siteKey} />
           {crawledOnly ? <input name="filter" type="hidden" value="crawled" /> : null}
           {hasChaptersOnly ? (

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import { apiPath } from "@/lib/paths";
 
 export default function TitleCrawlButton({
   titleId,
@@ -31,7 +32,7 @@ export default function TitleCrawlButton({
   const [deleting, setDeleting] = useState(false);
 
   const refreshProgress = useCallback(async () => {
-    const response = await fetch(`/api/titles/${titleId}/crawl`, {
+    const response = await fetch(apiPath(`/api/titles/${titleId}/crawl`), {
       cache: "no-store",
     });
     const data = await response.json();
@@ -85,7 +86,7 @@ export default function TitleCrawlButton({
     setMessage("");
 
     try {
-      const response = await fetch(`/api/titles/${titleId}/crawl`, {
+      const response = await fetch(apiPath(`/api/titles/${titleId}/crawl`), {
         method: "POST",
       });
       const data = await response.json();
@@ -107,7 +108,7 @@ export default function TitleCrawlButton({
     setMessage("Recrawling chapters...");
 
     try {
-      const response = await fetch(`/api/titles/${titleId}/chapters`, {
+      const response = await fetch(apiPath(`/api/titles/${titleId}/chapters`), {
         method: "POST",
       });
       const data = await response.json();
@@ -134,7 +135,7 @@ export default function TitleCrawlButton({
     setMessage("Deleting crawled chapters...");
 
     try {
-      const response = await fetch(`/api/titles/${titleId}/chapters`, {
+      const response = await fetch(apiPath(`/api/titles/${titleId}/chapters`), {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ confirmation: "DELETE_TITLE_CHAPTERS" }),

@@ -4,6 +4,7 @@ import ChapterSelect from "@/components/ChapterSelect";
 import MangaAiReader from "@/components/MangaAiReader";
 import ReadingHistoryTracker from "@/components/ReadingHistoryTracker";
 import { pool } from "@/lib/db";
+import { apiPath } from "@/lib/paths";
 import styles from "./page.module.css";
 
 type Chapter = {
@@ -141,7 +142,7 @@ export default async function ReaderPage({
             images={imagesResult.rows.map((image, index) => ({
               id: image.id,
               src: chapter.store_images_locally
-                ? `/api/images/${image.id}`
+                ? apiPath(`/api/images/${image.id}`)
                 : image.src,
               alt: `${chapter.title} ${chapter.name} page ${index + 1}`,
               eager: index < 2,

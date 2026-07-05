@@ -4,6 +4,7 @@ import ChapterCrawlButton from "@/components/ChapterCrawlButton";
 import FavoriteButton from "@/components/FavoriteButton";
 import SiteHeader from "@/components/SiteHeader";
 import { pool } from "@/lib/db";
+import { apiPath } from "@/lib/paths";
 import styles from "./page.module.css";
 
 type Manga = {
@@ -141,7 +142,7 @@ export default async function MangaDetailPage({
                   {readableChapters.length > 0 && (
                     <a
                       className={styles.epubButton}
-                      href={`/api/titles/${manga.id}/epub`}
+                      href={apiPath(`/api/titles/${manga.id}/epub`)}
                     >
                       ↓　EPUB
                     </a>

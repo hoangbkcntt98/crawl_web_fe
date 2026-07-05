@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { apiPath } from "@/lib/paths";
 import styles from "./SiteRegistry.module.css";
 
 type Site = {
@@ -87,7 +88,7 @@ export default function SiteRegistry({
     if (!sites.some((site) => site.crawl_status === "crawling")) return;
 
     const interval = window.setInterval(async () => {
-      const response = await fetch("/api/sites", { cache: "no-store" });
+      const response = await fetch(apiPath("/api/sites"), { cache: "no-store" });
       const data = await response.json();
       if (response.ok) {
         setSites(data.sites || []);
@@ -127,11 +128,13 @@ export default function SiteRegistry({
       const config = JSON.parse(configText);
       const editing = formMode.type === "edit";
       const response = await fetch(
-        editing
-          ? `/api/sites/${encodeURIComponent(formMode.sourceSiteKey)}`
-          : formMode.type === "clone"
-            ? "/api/sites?createOnly=1"
-            : "/api/sites",
+        apiPath(
+          editing
+            ? `/api/sites/${encodeURIComponent(formMode.sourceSiteKey)}`
+            : formMode.type === "clone"
+              ? "/api/sites?createOnly=1"
+              : "/api/sites"
+        ),
         {
           method: editing ? "PATCH" : "POST",
           headers: { "Content-Type": "application/json" },
@@ -141,7 +144,7 @@ export default function SiteRegistry({
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Registration failed");
 
-      const sitesResponse = await fetch("/api/sites", { cache: "no-store" });
+      const sitesResponse = await fetch(apiPath("/api/sites"), { cache: "no-store" });
       const sitesData = await sitesResponse.json();
       setSites(sitesData.sites || []);
       setStorageDrafts(getStorageDrafts(sitesData.sites || []));
@@ -169,7 +172,7 @@ export default function SiteRegistry({
     setLoadingSample(true);
     setMessage("");
     try {
-      const response = await fetch("/api/sites/sample", {
+      const response = await fetch(apiPath("/api/sites/sample"), {
         cache: "no-store",
       });
       const data = await response.json();
@@ -197,7 +200,7 @@ export default function SiteRegistry({
     setMessage("");
     try {
       const response = await fetch(
-        `/api/sites/${encodeURIComponent(siteKey)}/crawl`,
+        apiPath(`/api/sites/${encodeURIComponent(siteKey)}/crawl`),
         {
           method: "POST",
         }
@@ -223,7 +226,7 @@ export default function SiteRegistry({
     setMessage("");
     try {
       const response = await fetch(
-        `/api/sites/${encodeURIComponent(siteKey)}`,
+        apiPath(`/api/sites/${encodeURIComponent(siteKey)}`),
         { cache: "no-store" }
       );
       const data = await response.json();
@@ -254,7 +257,7 @@ export default function SiteRegistry({
     setMessage("");
     try {
       const response = await fetch(
-        `/api/sites/${encodeURIComponent(siteKey)}`,
+        apiPath(`/api/sites/${encodeURIComponent(siteKey)}`),
         { cache: "no-store" }
       );
       const data = await response.json();
@@ -347,7 +350,7 @@ export default function SiteRegistry({
     setMessage("");
     try {
       const response = await fetch(
-        `/api/sites/${encodeURIComponent(siteKey)}`,
+        apiPath(`/api/sites/${encodeURIComponent(siteKey)}`),
         {
           method: "DELETE",
           headers: { "Content-Type": "application/json" },
@@ -380,7 +383,7 @@ export default function SiteRegistry({
     setMessage("");
     try {
       const response = await fetch(
-        `/api/sites/${encodeURIComponent(siteKey)}/storage`,
+        apiPath(`/api/sites/${encodeURIComponent(siteKey)}/storage`),
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },

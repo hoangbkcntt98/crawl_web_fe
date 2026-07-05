@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { apiPath } from "@/lib/paths";
 import styles from "./MangaAiReader.module.css";
 
 type MangaImage = {
@@ -205,7 +206,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
     setLoading(true);
 
     try {
-      const response = await fetch("/api/ai", {
+      const response = await fetch(apiPath("/api/ai"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
