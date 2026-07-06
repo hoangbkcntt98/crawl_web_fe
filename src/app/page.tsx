@@ -51,6 +51,21 @@ export const revalidate = 0;
 
 const PAGE_SIZE = 24;
 const MAX_VISIBLE_PAGES = 7;
+const VIETNAMESE_SEARCH_GROUPS = [
+  ["a", "áàảãạăắằẳẵặâấầẩẫậ"],
+  ["e", "éèẻẽẹêếềểễệ"],
+  ["i", "íìỉĩị"],
+  ["o", "óòỏõọôốồổỗộơớờởỡợ"],
+  ["u", "úùủũụưứừửữự"],
+  ["y", "ýỳỷỹỵ"],
+  ["d", "đ"],
+] as const;
+const VIETNAMESE_ACCENTED_CHARS = VIETNAMESE_SEARCH_GROUPS.map(
+  ([, chars]) => chars
+).join("");
+const VIETNAMESE_ASCII_CHARS = VIETNAMESE_SEARCH_GROUPS.map(([base, chars]) =>
+  base.repeat(chars.length)
+).join("");
 
 function getPageNumber(page: string | string[] | undefined) {
   const rawPage = Array.isArray(page) ? page[0] : page;
@@ -59,6 +74,15 @@ function getPageNumber(page: string | string[] | undefined) {
   return Number.isFinite(parsedPage) && parsedPage > 0
     ? Math.floor(parsedPage)
     : 1;
+}
+
+function normalizeSearchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .toLowerCase();
 }
 
 type ChapterSort = "chapters_asc" | "chapters_desc";
@@ -106,16 +130,30 @@ export default async function Home({ searchParams }: HomeProps) {
   const chapterOrder = chapterSort === "chapters_asc" ? "ASC" : "DESC";
   const query = rawQuery?.trim() ?? "";
   const searchPattern = `%${query}%`;
+  const normalizedSearchPattern = `%${normalizeSearchText(query)}%`;
   const countResult = await pool.query<{ total: number }>(
     `SELECT COUNT(DISTINCT m.id)::int AS total
      FROM manga_titles m
      LEFT JOIN manga_details d ON d.manga_title_id = m.id
      LEFT JOIN manga_chapters c ON c.manga_title_id = m.id
      WHERE m.site_key = $1
-       AND m.title ILIKE $2
-       AND ($3::boolean = false OR d.images_crawled_at IS NOT NULL)
-       AND ($4::boolean = false OR c.id IS NOT NULL)`,
-    [selectedSite, searchPattern, crawledOnly, hasChaptersOnly]
+       AND (
+         $2 = ''
+         OR m.title ILIKE $3
+         OR translate(lower(m.title), $4, $5) LIKE $6
+       )
+       AND ($7::boolean = false OR d.images_crawled_at IS NOT NULL)
+       AND ($8::boolean = false OR c.id IS NOT NULL)`,
+    [
+      selectedSite,
+      query,
+      searchPattern,
+      VIETNAMESE_ACCENTED_CHARS,
+      VIETNAMESE_ASCII_CHARS,
+      normalizedSearchPattern,
+      crawledOnly,
+      hasChaptersOnly,
+    ]
   );
   const totalItems = countResult.rows[0]?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
@@ -171,19 +209,27 @@ export default async function Home({ searchParams }: HomeProps) {
       LEFT JOIN manga_details d ON d.manga_title_id = m.id
       LEFT JOIN manga_chapters c ON c.manga_title_id = m.id
       WHERE m.site_key = $1
-        AND m.title ILIKE $2
-        AND ($3::boolean = false OR d.images_crawled_at IS NOT NULL)
-        AND ($4::boolean = false OR EXISTS (
+        AND (
+          $2 = ''
+          OR m.title ILIKE $3
+          OR translate(lower(m.title), $4, $5) LIKE $6
+        )
+        AND ($7::boolean = false OR d.images_crawled_at IS NOT NULL)
+        AND ($8::boolean = false OR EXISTS (
           SELECT 1 FROM manga_chapters existing_c
           WHERE existing_c.manga_title_id = m.id
         ))
       GROUP BY m.id, s.store_images_locally, d.images_crawled_at, d.crawl_status
       ORDER BY chapter_count ${chapterOrder}, m.updated_at DESC
-      LIMIT $5 OFFSET $6
+      LIMIT $9 OFFSET $10
     `,
     [
       selectedSite,
+      query,
       searchPattern,
+      VIETNAMESE_ACCENTED_CHARS,
+      VIETNAMESE_ASCII_CHARS,
+      normalizedSearchPattern,
       crawledOnly,
       hasChaptersOnly,
       PAGE_SIZE,

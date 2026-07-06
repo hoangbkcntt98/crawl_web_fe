@@ -145,6 +145,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 14px;
 }
 
 .chapterHeading h2 {
@@ -155,6 +156,54 @@
 .chapterHeading span {
   color: #77869c;
   font-size: 13px;
+}
+
+.chapterHeadingActions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.crawlAllAction {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.crawlAllAction button {
+  min-height: 36px;
+  padding: 0 16px;
+  border: 1px solid rgba(74, 144, 255, 0.46);
+  border-radius: 9px;
+  background: rgba(43, 105, 214, 0.2);
+  color: #a9cbff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.crawlAllAction button:hover {
+  background: rgba(43, 105, 214, 0.34);
+}
+
+.crawlAllAction button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.crawlAllAction button[data-done="true"] {
+  border-color: rgba(38, 194, 129, 0.4);
+  background: rgba(26, 154, 103, 0.16);
+  color: #63d7a5;
+}
+
+.crawlAllAction small {
+  max-width: 220px;
+  overflow: hidden;
+  color: #77869c;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chapterList {
@@ -333,6 +382,28 @@
 
   .chapterSection {
     padding: 20px 14px 28px;
+  }
+
+  .chapterHeading {
+    align-items: flex-start;
+  }
+
+  .chapterHeadingActions {
+    flex-direction: column-reverse;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
+  .crawlAllAction {
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .crawlAllAction button {
+    min-height: 32px;
+    padding: 0 11px;
+    font-size: 12px;
   }
 
   .chapterRow {

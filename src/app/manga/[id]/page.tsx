@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import ChapterCrawlButton from "@/components/ChapterCrawlButton";
+import CrawlAllChaptersButton from "@/components/CrawlAllChaptersButton";
 import FavoriteButton from "@/components/FavoriteButton";
 import SiteHeader from "@/components/SiteHeader";
 import { pool } from "@/lib/db";
@@ -172,7 +173,16 @@ export default async function MangaDetailPage({
           <div className={styles.chapterSection}>
             <div className={styles.chapterHeading}>
               <h2>▣　チャプター</h2>
-              <span>{chapters.length} 件</span>
+              <div className={styles.chapterHeadingActions}>
+                <CrawlAllChaptersButton
+                  className={styles.crawlAllAction}
+                  initialCrawledCount={readableChapters.length}
+                  initialStatus="idle"
+                  initialTotalCount={chapters.length}
+                  titleId={manga.id}
+                />
+                <span>{chapters.length} 件</span>
+              </div>
             </div>
 
             {chapters.length > 0 ? (
