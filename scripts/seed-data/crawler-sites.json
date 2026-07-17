@@ -1,0 +1,206 @@
+[
+  {
+    "site_key": "mangarw-base",
+    "store_images_locally": false,
+    "local_image_storage_path": null,
+    "config": {
+      "site_key": "mangarw-base",
+      "base_url": "https://mangarw.com",
+      "list": {
+        "url": "https://mangarw.com/browse?sort=views_month&status=1&isAdult=true&genres=21",
+        "page_param": "page",
+        "pagination_selector": "a[href*='page=']",
+        "item_selector": "a[href^='/manga/'][title]",
+        "href": { "selector": "@self", "attr": "href", "absolute_url": true },
+        "title": { "selector": "@self", "attr": "title" },
+        "image": {
+          "selector": "img",
+          "attr": ["data-src", "data-original", "data-lazy-src", "src"],
+          "absolute_url": true
+        }
+      },
+      "detail": {
+        "description": { "selector": "meta[name='description']", "attr": "content" },
+        "chapters": {
+          "container_selector": "li[data-chapter-title]",
+          "link_selector": "a[href*='/read?id=']",
+          "href": { "selector": "@self", "attr": "href", "absolute_url": true },
+          "title_sources": [
+            { "selector": "@self", "attr": "data-chapter-title", "target": "container" },
+            { "selector": "h4", "text": true, "target": "link" },
+            { "selector": "@self", "text": true, "target": "link" }
+          ],
+          "published": { "selector": "span", "regex": "\\d{4}年\\d{1,2}月\\d{1,2}日" },
+          "source_id_query_param": "id"
+        }
+      },
+      "reader": {
+        "image_selector": "#viewer img.page-img",
+        "image_attrs": ["data-src", "data-original", "data-lazy-src", "src"]
+      }
+    }
+  },
+  {
+    "site_key": "mangarw-base-18-plus-month-1",
+    "store_images_locally": false,
+    "local_image_storage_path": null,
+    "config": {
+      "site_key": "mangarw-base-18-plus-month-1",
+      "base_url": "https://mangarw.com",
+      "list": {
+        "url": "https://mangarw.com/browse?sort=views_month&status=&isAdult=true",
+        "page_param": "page",
+        "pagination_selector": "a[href*='page=']",
+        "item_selector": "a[href^='/manga/'][title]",
+        "href": { "selector": "@self", "attr": "href", "absolute_url": true },
+        "title": { "selector": "@self", "attr": "title" },
+        "image": {
+          "selector": "img",
+          "attr": ["data-src", "data-original", "data-lazy-src", "src"],
+          "absolute_url": true
+        }
+      },
+      "detail": {
+        "description": { "selector": "meta[name='description']", "attr": "content" },
+        "chapters": {
+          "container_selector": "li[data-chapter-title]",
+          "link_selector": "a[href*='/read?id=']",
+          "href": { "selector": "@self", "attr": "href", "absolute_url": true },
+          "title_sources": [
+            { "selector": "@self", "attr": "data-chapter-title", "target": "container" },
+            { "selector": "h4", "text": true, "target": "link" },
+            { "selector": "@self", "text": true, "target": "link" }
+          ],
+          "published": { "selector": "span", "regex": "\\d{4}年\\d{1,2}月\\d{1,2}日" },
+          "source_id_query_param": "id"
+        }
+      },
+      "reader": {
+        "image_selector": "#viewer img.page-img",
+        "image_attrs": ["data-src", "data-original", "data-lazy-src", "src"]
+      }
+    }
+  },
+  {
+    "site_key": "mangarw-base-harem-isekai-adventure-copy",
+    "store_images_locally": false,
+    "local_image_storage_path": null,
+    "config": {
+      "site_key": "mangarw-base-harem-isekai-adventure-copy",
+      "base_url": "https://mangarw.com",
+      "list": {
+        "url": "https://mangarw.com/browse?sort=views_month&status=&genres=1&genres=4&genres=6&genres=7",
+        "page_param": "page",
+        "pagination_selector": "a[href*='page=']",
+        "item_selector": "a[href^='/manga/'][title]",
+        "href": { "selector": "@self", "attr": "href", "absolute_url": true },
+        "title": { "selector": "@self", "attr": "title" },
+        "image": {
+          "selector": "img",
+          "attr": ["data-src", "data-original", "data-lazy-src", "src"],
+          "absolute_url": true
+        }
+      },
+      "detail": {
+        "description": { "selector": "meta[name='description']", "attr": "content" },
+        "chapters": {
+          "container_selector": "li[data-chapter-title]",
+          "link_selector": "a[href*='/read?id=']",
+          "href": { "selector": "@self", "attr": "href", "absolute_url": true },
+          "title_sources": [
+            { "selector": "@self", "attr": "data-chapter-title", "target": "container" },
+            { "selector": "h4", "text": true, "target": "link" },
+            { "selector": "@self", "text": true, "target": "link" }
+          ],
+          "published": { "selector": "span", "regex": "\\d{4}年\\d{1,2}月\\d{1,2}日" },
+          "source_id_query_param": "id"
+        }
+      },
+      "reader": {
+        "image_selector": "#viewer img.page-img",
+        "image_attrs": ["data-src", "data-original", "data-lazy-src", "src"]
+      }
+    }
+  },
+  {
+    "site_key": "nettruyen-base",
+    "store_images_locally": false,
+    "local_image_storage_path": null,
+    "config": {
+      "site_key": "nettruyen-base",
+      "base_url": "https://nettruyen.fit",
+      "list": {
+        "url": "https://nettruyen.fit/truyen-tranh-con-trai",
+        "page_url_format": "https://nettruyen.fit/truyen-tranh-con-trai?page={page}",
+        "pagination_selector": "#ctl00_mainContent_ctl00_divPager .pagination a, .pagination a",
+        "item_selector": ".ModuleContent .items .row .item figure.clearfix",
+        "href": { "selector": ".image a[href*='/truyen-tranh/']", "attr": "href", "absolute_url": true },
+        "title": { "selector": ".image a[title]", "attr": "title" },
+        "image": {
+          "selector": ".image img",
+          "attr": ["data-src", "data-original", "data-lazy-src", "src"],
+          "absolute_url": true
+        }
+      },
+      "detail": {
+        "description": { "selector": "meta[name='description']", "attr": "content" },
+        "chapters": {
+          "container_selector": "#nt_listchapter li.row",
+          "link_selector": ".chapter a[href*='/truyen-tranh/']",
+          "href": { "selector": "@self", "attr": "href", "absolute_url": true },
+          "title_sources": [
+            { "selector": "@self", "text": true, "target": "link" },
+            { "selector": "@self", "attr": "title", "target": "link" }
+          ],
+          "published": { "selector": ".small.text-center", "text": true },
+          "source_id_regex": "(?:chapter|chuong)-([^/?#]+)"
+        }
+      },
+      "reader": {
+        "image_selector": ".reading-detail.box_doc .page-chapter img, .reading-detail .page-chapter img",
+        "image_attrs": ["data-src", "data-original", "data-lazy-src", "src"]
+      }
+    }
+  },
+  {
+    "site_key": "sayhentai-base-copy",
+    "store_images_locally": false,
+    "local_image_storage_path": null,
+    "config": {
+      "site_key": "sayhentai-base-copy",
+      "base_url": "https://sayhentai.pw",
+      "list": {
+        "url": "https://sayhentai.pw/danh-sach/?order_by=update_time&sort=desc&page=1",
+        "page_param": "page",
+        "pagination_selector": "a[href*='page=']",
+        "item_selector": "article.thumb a.halim-thumb[href*='/truyen/']",
+        "href": { "selector": "@self", "attr": "href", "absolute_url": true },
+        "title": { "selector": "@self", "attr": "title" },
+        "image": {
+          "selector": "img",
+          "attr": ["data-src", "data-original", "data-lazy-src", "src"],
+          "absolute_url": true
+        }
+      },
+      "detail": {
+        "description": { "selector": "div.entry-content", "text": true },
+        "chapters": {
+          "container_selector": "#list-chap li.chapter",
+          "link_selector": "a[href*='/doc-truyen/'][href*='chapter-']",
+          "href": { "selector": "@self", "attr": "href", "absolute_url": true },
+          "title_sources": [
+            { "selector": ".chap-name", "text": true, "target": "container" },
+            { "selector": "@self", "attr": "title", "target": "link" },
+            { "selector": "@self", "text": true, "target": "link" }
+          ],
+          "published": { "selector": "span:not(.chap-name)", "regex": ".+" },
+          "source_id_regex": "chapter-(\\d+)\\.html"
+        }
+      },
+      "reader": {
+        "image_selector": "#content img.simg",
+        "image_attrs": ["src", "data-sv1", "data-src", "data-original", "data-lazy-src"]
+      }
+    }
+  }
+]

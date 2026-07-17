@@ -6,8 +6,10 @@ import SiteRegistry from "@/components/SiteRegistry";
 import SiteSwitcher from "@/components/SiteSwitcher";
 import TitleCoverImage from "@/components/TitleCoverImage";
 import TitleCrawlButton from "@/components/TitleCrawlButton";
+import { getCurrentUser } from "@/lib/auth";
 import { imageStorageRoot } from "@/lib/imageStorage";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import styles from "./page.module.css";
 
 type MangaTitle = {
@@ -89,6 +91,8 @@ type ChapterSort = "chapters_asc" | "chapters_desc";
 
 export default async function Home({ searchParams }: HomeProps) {
   const { page, q, filter, chapters, site, sort } = await searchParams;
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
   await reconcileStoppedCrawlers();
   const rawSite = Array.isArray(site) ? site[0] : site;
   const selectedSite = rawSite?.trim() ?? "";
@@ -369,6 +373,9 @@ export default async function Home({ searchParams }: HomeProps) {
             <Link href="/history" style={{ color: "#c5cbe0", textDecoration: "none" }}>
               読書履歴
             </Link>
+            <Link href="/flashcards" style={{ color: "#c5cbe0", textDecoration: "none" }}>
+              Flash Cards
+            </Link>
           </nav>
 
           <HomeHeaderActions
@@ -377,6 +384,7 @@ export default async function Home({ searchParams }: HomeProps) {
             initialQuery={query}
             siteKey={selectedSite}
             sort={chapterSort}
+            username={user?.username ?? null}
           />
         </div>
       </header>

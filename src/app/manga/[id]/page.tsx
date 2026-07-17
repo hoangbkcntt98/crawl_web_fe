@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import BulkTranslateButton from "@/components/BulkTranslateButton";
 import ChapterCrawlButton from "@/components/ChapterCrawlButton";
 import CrawlAllChaptersButton from "@/components/CrawlAllChaptersButton";
 import FavoriteButton from "@/components/FavoriteButton";
 import SiteHeader from "@/components/SiteHeader";
+import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { apiPath } from "@/lib/paths";
 import styles from "./page.module.css";
@@ -33,6 +35,11 @@ type LastReadChapter = {
   last_read_at: Date;
 };
 
+type AiTranslationStats = {
+  total_images: number;
+  translated_images: number;
+};
+
 export const dynamic = "force-dynamic";
 
 export default async function MangaDetailPage({
@@ -40,10 +47,19 @@ export default async function MangaDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const { id } = await params;
   if (!/^\d+$/.test(id)) notFound();
 
-  const [mangaResult, chapterResult, favoriteResult, historyResult] =
+  const [
+    mangaResult,
+    chapterResult,
+    favoriteResult,
+    historyResult,
+    aiStatsResult,
+  ] =
     await Promise.all([
       pool.query<Manga>(
         `SELECT
@@ -94,6 +110,20 @@ export default async function MangaDetailPage({
          LIMIT 1`,
         [id]
       ),
+      pool.query<AiTranslationStats>(
+        `SELECT
+           COUNT(i.id)::int AS total_images,
+           COUNT(r.id)::int AS translated_images
+         FROM manga_titles m
+         JOIN crawler_sites s ON s.site_key = m.site_key
+         LEFT JOIN manga_chapters c ON c.manga_title_id = m.id
+         LEFT JOIN chapter_images i ON i.chapter_id = c.id
+           AND (s.store_images_locally = FALSE OR i.local_path IS NOT NULL)
+         LEFT JOIN manga_ai_responses r ON r.image_id = i.id
+           AND r.action = 'translate'
+         WHERE m.id = $1`,
+        [id]
+      ),
     ]);
 
   const manga = mangaResult.rows[0];
@@ -103,6 +133,10 @@ export default async function MangaDetailPage({
   const readableChapters = chapters.filter((chapter) => chapter.image_count > 0);
   const firstChapter = readableChapters[0] ?? chapters[0];
   const lastReadChapter = historyResult.rows[0] ?? null;
+  const aiStats = aiStatsResult.rows[0] ?? {
+    total_images: 0,
+    translated_images: 0,
+  };
   const readTarget = lastReadChapter ?? firstChapter;
 
   return (
@@ -179,6 +213,12 @@ export default async function MangaDetailPage({
                   initialCrawledCount={readableChapters.length}
                   initialStatus="idle"
                   initialTotalCount={chapters.length}
+                  titleId={manga.id}
+                />
+                <BulkTranslateButton
+                  className={styles.bulkTranslateAction}
+                  initialTotalCount={aiStats.total_images}
+                  initialTranslatedCount={aiStats.translated_images}
                   titleId={manga.id}
                 />
                 <span>{chapters.length} 件</span>

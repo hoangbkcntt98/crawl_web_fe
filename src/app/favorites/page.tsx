@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import SiteHeader from "@/components/SiteHeader";
+import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import styles from "../library.module.css";
 
@@ -13,6 +15,9 @@ type Favorite = {
 export const dynamic = "force-dynamic";
 
 export default async function FavoritesPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const result = await pool.query<Favorite>(
     `SELECT
        m.id,

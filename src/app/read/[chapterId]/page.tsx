@@ -1,8 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import ChapterSelect from "@/components/ChapterSelect";
 import MangaAiReader from "@/components/MangaAiReader";
 import ReadingHistoryTracker from "@/components/ReadingHistoryTracker";
+import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import { apiPath } from "@/lib/paths";
 import styles from "./page.module.css";
@@ -35,6 +36,9 @@ export default async function ReaderPage({
 }: {
   params: Promise<{ chapterId: string }>;
 }) {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const { chapterId } = await params;
   if (!/^\d+$/.test(chapterId)) notFound();
 

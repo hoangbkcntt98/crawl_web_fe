@@ -164,13 +164,21 @@
   gap: 14px;
 }
 
-.crawlAllAction {
+.crawlAllAction,
+.bulkTranslateAction {
   display: flex;
   align-items: center;
   gap: 9px;
 }
 
-.crawlAllAction button {
+.bulkTranslateAction :global(.bulkTranslateButtons) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.crawlAllAction button,
+.bulkTranslateAction button {
   min-height: 36px;
   padding: 0 16px;
   border: 1px solid rgba(74, 144, 255, 0.46);
@@ -182,22 +190,46 @@
   font-weight: 900;
 }
 
-.crawlAllAction button:hover {
+.bulkTranslateAction button {
+  border-color: rgba(168, 117, 255, 0.5);
+  background: rgba(117, 68, 214, 0.22);
+  color: #d8c4ff;
+}
+
+.bulkTranslateAction button[data-variant="stop"] {
+  border-color: rgba(255, 95, 118, 0.58);
+  background: rgba(175, 45, 72, 0.22);
+  color: #ff9aaa;
+}
+
+.crawlAllAction button:hover,
+.bulkTranslateAction button:hover {
   background: rgba(43, 105, 214, 0.34);
 }
 
-.crawlAllAction button:disabled {
+.bulkTranslateAction button:hover {
+  background: rgba(117, 68, 214, 0.36);
+}
+
+.bulkTranslateAction button[data-variant="stop"]:hover {
+  background: rgba(175, 45, 72, 0.36);
+}
+
+.crawlAllAction button:disabled,
+.bulkTranslateAction button:disabled {
   cursor: wait;
   opacity: 0.7;
 }
 
-.crawlAllAction button[data-done="true"] {
+.crawlAllAction button[data-done="true"],
+.bulkTranslateAction button[data-done="true"] {
   border-color: rgba(38, 194, 129, 0.4);
   background: rgba(26, 154, 103, 0.16);
   color: #63d7a5;
 }
 
-.crawlAllAction small {
+.crawlAllAction small,
+.bulkTranslateAction small {
   max-width: 220px;
   overflow: hidden;
   color: #77869c;
@@ -394,13 +426,15 @@
     gap: 8px;
   }
 
-  .crawlAllAction {
+  .crawlAllAction,
+  .bulkTranslateAction {
     align-items: flex-end;
     flex-direction: column;
     gap: 5px;
   }
 
-  .crawlAllAction button {
+  .crawlAllAction button,
+  .bulkTranslateAction button {
     min-height: 32px;
     padding: 0 11px;
     font-size: 12px;

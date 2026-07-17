@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { appPath } from "@/lib/paths";
+import { apiPath, appPath } from "@/lib/paths";
 import styles from "./HomeHeaderActions.module.css";
 
 export default function HomeHeaderActions({
@@ -11,17 +12,26 @@ export default function HomeHeaderActions({
   hasChaptersOnly,
   siteKey,
   sort,
+  username,
 }: {
   initialQuery: string;
   crawledOnly: boolean;
   hasChaptersOnly: boolean;
   siteKey: string;
   sort: string;
+  username: string | null;
 }) {
+  const router = useRouter();
   const [mobilePanel, setMobilePanel] = useState<"search" | "menu" | null>(null);
 
   function togglePanel(panel: "search" | "menu") {
     setMobilePanel((current) => (current === panel ? null : panel));
+  }
+
+  async function logout() {
+    await fetch(apiPath("/api/auth/logout"), { method: "POST" });
+    router.replace("/login");
+    router.refresh();
   }
 
   return (
@@ -48,8 +58,11 @@ export default function HomeHeaderActions({
         />
       </form>
 
-      <div className={styles.desktopProfile} aria-hidden="true">
-        ◔
+      <div className={styles.desktopProfile}>
+        {username ? <span>{username}</span> : null}
+        <button onClick={logout} type="button">
+          Logout
+        </button>
       </div>
 
       <div className={styles.mobileActions}>
@@ -126,6 +139,12 @@ export default function HomeHeaderActions({
           <Link href="/history" onClick={() => setMobilePanel(null)}>
             読書履歴
           </Link>
+          <Link href="/flashcards" onClick={() => setMobilePanel(null)}>
+            Flash Cards
+          </Link>
+          <button onClick={logout} type="button">
+            Logout
+          </button>
         </nav>
       )}
     </div>

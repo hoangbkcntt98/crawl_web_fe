@@ -1,7 +1,11 @@
 import Link from "next/link";
+import { getCurrentUser } from "@/lib/auth";
+import LogoutButton from "./LogoutButton";
 import styles from "./SiteHeader.module.css";
 
-export default function SiteHeader() {
+export default async function SiteHeader() {
+  const user = await getCurrentUser();
+
   return (
     <header className={styles.header}>
       <div className={styles.inner}>
@@ -14,9 +18,17 @@ export default function SiteHeader() {
           <Link href="#">ジャンル</Link>
           <Link href="/favorites">しおり</Link>
           <Link href="/history">読書履歴</Link>
+          <Link href="/flashcards">Flash Cards</Link>
         </nav>
 
         <div className={styles.search}>⌕　マンガの名前を入力...</div>
+
+        {user ? (
+          <div className={styles.account}>
+            <span>{user.username}</span>
+            <LogoutButton className={styles.logoutButton} />
+          </div>
+        ) : null}
 
         <div className={styles.mobileActions} aria-hidden="true">
           <span>⌕</span>

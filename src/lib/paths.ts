@@ -9,3 +9,9 @@ export function appPath(path: string) {
 }
 
 export const apiPath = appPath;
+
+export function routerPath(path: string) {
+  if (!BASE_PATH || !path.startsWith(BASE_PATH)) return path;
+  const withoutBasePath = path.slice(BASE_PATH.length);
+  return withoutBasePath.startsWith("/") ? withoutBasePath : "/";
+}

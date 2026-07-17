@@ -30,11 +30,29 @@ type Translation = {
   note: string | null;
 };
 
+type PhraseAnalysis = {
+  reading: string | null;
+  meaning_vi: string;
+  kanji: Array<{
+    kanji: string;
+    meaning_vi: string;
+    onyomi?: string | null;
+    kunyomi?: string | null;
+  }>;
+  grammar: string | null;
+};
+
 type Message = {
   id: number;
   role: "user" | "assistant";
   text?: string;
   translation?: Translation;
+  phraseAnalysis?: {
+    context: string;
+    phrase: string;
+    saved?: boolean;
+    value: PhraseAnalysis;
+  };
   error?: boolean;
 };
 
@@ -43,6 +61,14 @@ type ApiResponse = {
   content?: string | Translation;
   cached?: boolean;
   error?: string;
+};
+
+type PhraseResponse = {
+  action?: "ask" | "card";
+  analysis?: PhraseAnalysis;
+  error?: string;
+  phrase?: string;
+  saved?: boolean;
 };
 
 const MIN_IMAGE_SCALE = 1;
@@ -57,6 +83,96 @@ function touchDistance(event: TouchEvent) {
 
 function clampScale(scale: number) {
   return Math.min(MAX_IMAGE_SCALE, Math.max(MIN_IMAGE_SCALE, scale));
+}
+
+const JAPANESE_PARTICLE_PATTERN =
+  /(から|まで|より|では|には|とは|って|は|が|を|に|へ|で|と|も|の|や|か|ね|よ|ぞ)/g;
+const JAPANESE_PARTICLES = new Set([
+  "から",
+  "まで",
+  "より",
+  "では",
+  "には",
+  "とは",
+  "って",
+  "は",
+  "が",
+  "を",
+  "に",
+  "へ",
+  "で",
+  "と",
+  "も",
+  "の",
+  "や",
+  "か",
+  "ね",
+  "よ",
+  "ぞ",
+]);
+
+function splitJapanesePhraseSegments(text: string) {
+  return text
+    .split(JAPANESE_PARTICLE_PATTERN)
+    .filter(Boolean)
+    .map((part) => ({
+      clickable: Boolean(part.trim()) && !JAPANESE_PARTICLES.has(part),
+      text: part,
+    }));
+}
+
+function normalizePhrase(part: string) {
+  return part.trim();
+}
+
+function PhraseAnalysisView({
+  analysis,
+  disabled,
+  onCreateCard,
+  phrase,
+  saved,
+}: {
+  analysis: PhraseAnalysis;
+  disabled?: boolean;
+  onCreateCard?: () => void;
+  phrase: string;
+  saved?: boolean;
+}) {
+  return (
+    <div className={styles.phraseAnalysis}>
+      <strong>{phrase}</strong>
+      {analysis.reading ? <small>読み方: {analysis.reading}</small> : null}
+      <p>意味: {analysis.meaning_vi}</p>
+      {analysis.kanji?.length ? (
+        <div>
+          <span>漢字:</span>
+          <ul>
+            {analysis.kanji.map((item, index) => (
+              <li key={`${item.kanji}-${index}`}>
+                {item.kanji}: {item.meaning_vi}
+                {item.onyomi || item.kunyomi
+                  ? ` (${[item.onyomi, item.kunyomi].filter(Boolean).join(" / ")})`
+                  : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {analysis.grammar ? <p>文法: {analysis.grammar}</p> : null}
+      {saved ? (
+        <em>Flash card saved.</em>
+      ) : onCreateCard ? (
+        <button
+          className={styles.phraseCardButton}
+          disabled={disabled}
+          onClick={onCreateCard}
+          type="button"
+        >
+          Tạo Card
+        </button>
+      ) : null}
+    </div>
+  );
 }
 
 function ZoomableMangaImage({
@@ -150,6 +266,11 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [phraseLoading, setPhraseLoading] = useState(false);
+  const [activePhrase, setActivePhrase] = useState<{
+    context: string;
+    phrase: string;
+  } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const checkedImage =
@@ -250,6 +371,72 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
     }
   };
 
+  const requestPhrase = async (action: "ask" | "card") => {
+    if (!activePhrase || phraseLoading) return;
+    const { context, phrase } = activePhrase;
+    await requestPhraseAction(action, phrase, context);
+  };
+
+  const requestPhraseAction = async (
+    action: "ask" | "card",
+    phrase: string,
+    context: string
+  ) => {
+    if (phraseLoading) return;
+    setPhraseLoading(true);
+    setActivePhrase(null);
+    setMessages((current) => [
+      ...current,
+      {
+        id: Date.now(),
+        role: "user",
+        text: `${action === "card" ? "Create flash card" : "Ask AI"}: ${phrase}`,
+      },
+    ]);
+
+    try {
+      const response = await fetch(apiPath("/api/phrases"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, context, phrase }),
+      });
+      const result = (await response.json()) as PhraseResponse;
+      if (!response.ok || result.error || !result.analysis) {
+        throw new Error(result.error || "Phrase AI request failed.");
+      }
+      const analysis = result.analysis;
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          phraseAnalysis: {
+            context,
+            phrase: result.phrase || phrase,
+            saved: result.saved,
+            value: analysis,
+          },
+        },
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          text:
+            error instanceof Error
+              ? error.message
+              : "AIサービスでエラーが発生しました。",
+          error: true,
+        },
+      ]);
+    } finally {
+      setPhraseLoading(false);
+    }
+  };
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = input.trim();
@@ -346,11 +533,63 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                     <div className={styles.translation}>
                       {message.translation.items?.map((item, index) => (
                         <div className={styles.translationItem} key={index}>
-                          <strong>{item.text}</strong>
+                          <strong>
+                            {splitJapanesePhraseSegments(item.text).map(
+                              (segment, phraseIndex) => {
+                                if (!segment.clickable) {
+                                  return (
+                                    <span
+                                      className={styles.phrasePlain}
+                                      key={`${segment.text}-${phraseIndex}`}
+                                    >
+                                      {segment.text}
+                                    </span>
+                                  );
+                                }
+
+                                const phrase = normalizePhrase(segment.text);
+                                return (
+                                <button
+                                  className={styles.phraseButton}
+                                  key={`${phrase}-${phraseIndex}`}
+                                  onClick={() =>
+                                    setActivePhrase((current) =>
+                                      current?.phrase === phrase &&
+                                      current.context === item.text
+                                        ? null
+                                        : { context: item.text, phrase }
+                                    )
+                                  }
+                                  type="button"
+                                >
+                                  {segment.text}
+                                </button>
+                                );
+                              }
+                            )}
+                          </strong>
+                          {activePhrase?.context === item.text ? (
+                            <div className={styles.phraseMenu}>
+                              <button
+                                disabled={phraseLoading}
+                                onClick={() => void requestPhrase("ask")}
+                                type="button"
+                              >
+                                Hỏi AI
+                              </button>
+                              <button
+                                disabled={phraseLoading}
+                                onClick={() => void requestPhrase("card")}
+                                type="button"
+                              >
+                                Tạo Card (AI)
+                              </button>
+                            </div>
+                          ) : null}
                           {item.reading ? <small>{item.reading}</small> : null}
                           <p>{item.meaning_vi}</p>
                           {Number.isFinite(item.confidence) ? (
-                            <span>
+                            <span className={styles.confidence}>
                               Confidence:{" "}
                               {Math.round(item.confidence * 100)}%
                             </span>
@@ -363,12 +602,29 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                         </p>
                       ) : null}
                     </div>
+                  ) : message.phraseAnalysis ? (
+                    <PhraseAnalysisView
+                      analysis={message.phraseAnalysis.value}
+                      disabled={phraseLoading}
+                      onCreateCard={
+                        message.phraseAnalysis.saved
+                          ? undefined
+                          : () =>
+                              void requestPhraseAction(
+                                "card",
+                                message.phraseAnalysis?.phrase ?? "",
+                                message.phraseAnalysis?.context ?? ""
+                              )
+                      }
+                      phrase={message.phraseAnalysis.phrase}
+                      saved={message.phraseAnalysis.saved}
+                    />
                   ) : (
                     message.text
                   )}
                 </div>
               ))}
-              {loading ? (
+              {loading || phraseLoading ? (
                 <div className={`${styles.message} ${styles.aiMessage}`}>
                   <span className={styles.typing}>AI is thinking</span>
                 </div>
@@ -379,7 +635,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
             <div className={styles.actions}>
               <button
                 className={styles.translateButton}
-                disabled={loading}
+                disabled={loading || phraseLoading}
                 onClick={() => void requestAi("translate")}
                 type="button"
               >
@@ -390,7 +646,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
             <form className={styles.composer} onSubmit={handleSubmit}>
               <textarea
                 aria-label="Message"
-                disabled={loading}
+                disabled={loading || phraseLoading}
                 maxLength={4000}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={(event) => {
@@ -403,7 +659,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                 rows={1}
                 value={input}
               />
-              <button disabled={loading || !input.trim()} type="submit">
+              <button disabled={loading || phraseLoading || !input.trim()} type="submit">
                 Send
               </button>
             </form>

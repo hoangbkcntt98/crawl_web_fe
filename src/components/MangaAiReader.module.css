@@ -250,8 +250,69 @@
 
 .translationItem strong,
 .translationItem small,
-.translationItem span {
+.confidence {
   display: block;
+}
+
+.translationItem strong {
+  display: block;
+  line-height: 1.55;
+}
+
+.phrasePlain {
+  display: inline;
+}
+
+.phraseButton {
+  padding: 0;
+  display: inline;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: #eaf2ff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  line-height: 1.45;
+}
+
+.phraseButton:hover {
+  color: #8fb9ff;
+}
+
+.phraseMenu {
+  width: fit-content;
+  margin: 7px 0 4px;
+  padding: 6px;
+  display: flex;
+  gap: 6px;
+  border: 1px solid rgba(142, 181, 251, 0.24);
+  border-radius: 10px;
+  background: #0d1728;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.28);
+}
+
+.phraseMenu button {
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid rgba(76, 141, 255, 0.36);
+  border-radius: 8px;
+  background: rgba(48, 112, 226, 0.14);
+  color: #9fc0ff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.phraseMenu button:last-child {
+  border-color: rgba(49, 214, 142, 0.36);
+  background: rgba(26, 154, 103, 0.14);
+  color: #89e4b9;
+}
+
+.phraseMenu button:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .translationItem small {
@@ -263,7 +324,7 @@
   margin: 5px 0 0;
 }
 
-.translationItem span {
+.confidence {
   margin-top: 5px;
   color: #73839a;
   font-size: 10px;
@@ -273,6 +334,70 @@
   margin: 0;
   color: #ffcf78;
   font-size: 11px;
+}
+
+.phraseAnalysis {
+  display: grid;
+  gap: 6px;
+}
+
+.phraseAnalysis strong,
+.phraseAnalysis small,
+.phraseAnalysis span,
+.phraseAnalysis em {
+  display: block;
+}
+
+.phraseAnalysis strong {
+  color: #eaf2ff;
+}
+
+.phraseAnalysis small {
+  color: #8eb5fb;
+}
+
+.phraseAnalysis p {
+  margin: 0;
+}
+
+.phraseAnalysis ul {
+  margin: 5px 0 0;
+  padding-left: 18px;
+}
+
+.phraseAnalysis li {
+  margin: 2px 0;
+}
+
+.phraseAnalysis span {
+  color: #ffcf78;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.phraseAnalysis em {
+  color: #7de1ad;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.phraseCardButton {
+  width: fit-content;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid rgba(49, 214, 142, 0.42);
+  border-radius: 9px;
+  background: rgba(26, 154, 103, 0.16);
+  color: #89e4b9;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.phraseCardButton:disabled {
+  cursor: wait;
+  opacity: 0.62;
 }
 
 .typing::after {

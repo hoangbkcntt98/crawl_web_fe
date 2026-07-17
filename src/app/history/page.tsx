@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import SiteHeader from "@/components/SiteHeader";
+import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
 import styles from "../library.module.css";
 
@@ -15,6 +17,9 @@ type HistoryItem = {
 export const dynamic = "force-dynamic";
 
 export default async function HistoryPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
   const result = await pool.query<HistoryItem>(
     `SELECT
        m.id AS manga_id,
