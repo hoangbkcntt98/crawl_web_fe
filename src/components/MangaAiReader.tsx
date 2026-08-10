@@ -63,6 +63,17 @@ type ApiResponse = {
   error?: string;
 };
 
+type ImageAiModelOption = {
+  label: string;
+  model: string;
+  provider: "openclaw" | "bedrock";
+};
+
+type AiConfigResponse = {
+  defaultSelection?: Pick<ImageAiModelOption, "model" | "provider">;
+  models?: ImageAiModelOption[];
+};
+
 type PhraseResponse = {
   action?: "ask" | "card";
   analysis?: PhraseAnalysis;
@@ -267,6 +278,11 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [phraseLoading, setPhraseLoading] = useState(false);
+  const [aiModels, setAiModels] = useState<ImageAiModelOption[]>([
+    { label: "OpenClaw - openclaw", model: "openclaw", provider: "openclaw" },
+  ]);
+  const [selectedAiModel, setSelectedAiModel] = useState(0);
+  const [openClawModel, setOpenClawModel] = useState("");
   const [activePhrase, setActivePhrase] = useState<{
     context: string;
     phrase: string;
@@ -275,6 +291,20 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
 
   const checkedImage =
     images.find((image) => image.id === checkedImageId) ?? null;
+
+  const getSelectedAiRequest = () => {
+    const selectedModel = aiModels[selectedAiModel] ?? aiModels[0];
+    const customOpenClawModel = openClawModel.trim();
+
+    return {
+      provider: selectedModel?.provider,
+      ...(selectedModel?.provider === "openclaw"
+        ? customOpenClawModel
+          ? { model: customOpenClawModel }
+          : {}
+        : { model: selectedModel?.model }),
+    };
+  };
 
   const closeChat = () => {
     if (loading) return;
@@ -298,6 +328,35 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
     }
     setChatOpen(true);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAiConfig() {
+      try {
+        const response = await fetch(apiPath("/api/ai/config"), {
+          cache: "no-store",
+        });
+        const result = (await response.json()) as AiConfigResponse;
+        if (!response.ok || !result.models?.length || cancelled) return;
+
+        setAiModels(result.models);
+        const defaultIndex = result.models.findIndex(
+          (option) =>
+            option.provider === result.defaultSelection?.provider &&
+            option.model === result.defaultSelection?.model
+        );
+        setSelectedAiModel(defaultIndex >= 0 ? defaultIndex : 0);
+      } catch {
+        // The OpenClaw fallback remains available if config loading fails.
+      }
+    }
+
+    void loadAiConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -333,6 +392,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
         body: JSON.stringify({
           action,
           imageId: chatImage.id,
+          ...getSelectedAiRequest(),
           ...(action === "chat" ? { message } : {}),
         }),
       });
@@ -398,7 +458,12 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
       const response = await fetch(apiPath("/api/phrases"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, context, phrase }),
+        body: JSON.stringify({
+          action,
+          context,
+          phrase,
+          ...getSelectedAiRequest(),
+        }),
       });
       const result = (await response.json()) as PhraseResponse;
       if (!response.ok || result.error || !result.analysis) {
@@ -633,6 +698,40 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
             </div>
 
             <div className={styles.actions}>
+              <label className={styles.modelSelect}>
+                <span>AI model</span>
+                <select
+                  aria-label="AI model"
+                  disabled={loading || phraseLoading}
+                  onChange={(event) =>
+                    setSelectedAiModel(Number(event.target.value))
+                  }
+                  value={selectedAiModel}
+                >
+                  {aiModels.map((option, index) => (
+                    <option
+                      key={`${option.provider}-${option.model}`}
+                      value={index}
+                    >
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {aiModels[selectedAiModel]?.provider === "openclaw" ? (
+                <label className={styles.modelSelect}>
+                  <span>OpenClaw model (optional)</span>
+                  <input
+                    aria-label="Custom OpenClaw model"
+                    disabled={loading || phraseLoading}
+                    maxLength={200}
+                    onChange={(event) => setOpenClawModel(event.target.value)}
+                    placeholder="Leave blank to use OPENCLAW_MODEL"
+                    type="text"
+                    value={openClawModel}
+                  />
+                </label>
+              ) : null}
               <button
                 className={styles.translateButton}
                 disabled={loading || phraseLoading}

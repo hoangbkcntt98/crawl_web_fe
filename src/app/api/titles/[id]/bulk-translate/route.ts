@@ -4,6 +4,10 @@ import {
   translateImageWithAi,
   type ImageRecord,
 } from "@/lib/aiTranslation";
+import {
+  resolveImageAiSelection,
+  type ImageAiSelection,
+} from "@/lib/aiModels";
 
 type JobRow = {
   status: string;
@@ -13,6 +17,8 @@ type JobRow = {
   skipped_count: number;
   failed_count: number;
   error: string | null;
+  provider: string | null;
+  model: string | null;
 };
 
 const runningJobs = new Set<string>();
@@ -64,11 +70,15 @@ function getErrorMessage(error: unknown) {
   return error.message;
 }
 
-async function translateWithRetry(image: ImageRecord, requestUrl: string) {
+async function translateWithRetry(
+  image: ImageRecord,
+  requestUrl: string,
+  selection: ImageAiSelection
+) {
   let attempt = 0;
   while (true) {
     try {
-      return await translateImageWithAi({ image, requestUrl });
+      return await translateImageWithAi({ image, requestUrl, selection });
     } catch (error) {
       attempt += 1;
       if (!isRateLimitError(error) || attempt > BULK_TRANSLATE_RETRY_COUNT) {
@@ -96,6 +106,11 @@ async function ensureJobTable() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    ALTER TABLE manga_ai_bulk_jobs
+      ADD COLUMN IF NOT EXISTS provider TEXT,
+      ADD COLUMN IF NOT EXISTS model TEXT
+  `);
 }
 
 async function getImageCounts(titleId: string) {
@@ -120,7 +135,10 @@ async function getImageCounts(titleId: string) {
   return result.rows[0] ?? { total_count: 0, translated_count: 0 };
 }
 
-async function getJob(titleId: string) {
+async function getJob(
+  titleId: string,
+  requestedSelection: ImageAiSelection = resolveImageAiSelection()
+) {
   await ensureJobTable();
   const result = await pool.query<JobRow>(
     `SELECT
@@ -130,12 +148,23 @@ async function getJob(titleId: string) {
        translated_count,
        skipped_count,
        failed_count,
-       error
+       error,
+       provider,
+       model
      FROM manga_ai_bulk_jobs
      WHERE manga_title_id = $1`,
     [titleId]
   );
   const job = result.rows[0];
+  const jobSelection =
+    job?.provider && job.model
+      ? resolveImageAiSelection(job.provider, job.model)
+      : requestedSelection;
+  const running = job?.status === "running";
+  const selection = running ? jobSelection : requestedSelection;
+  const sameSelection =
+    jobSelection.provider === selection.provider &&
+    jobSelection.model === selection.model;
   const counts = await getImageCounts(titleId);
   if (job) {
     if (job.status === "running" && !runningJobs.has(titleId)) {
@@ -160,15 +189,25 @@ async function getJob(titleId: string) {
         processed_count: counts.translated_count,
         translated_count: counts.translated_count,
         error,
+        provider: selection.provider,
+        model: selection.model,
       };
     }
 
     return {
       ...job,
+      status: sameSelection ? job.status : "idle",
       total_count: counts.total_count,
       processed_count:
-        job.status === "running" ? counts.translated_count : job.processed_count,
+        running || !sameSelection
+          ? counts.translated_count
+          : job.processed_count,
       translated_count: counts.translated_count,
+      skipped_count: sameSelection ? job.skipped_count : 0,
+      failed_count: sameSelection ? job.failed_count : 0,
+      error: sameSelection ? job.error : null,
+      provider: selection.provider,
+      model: selection.model,
     };
   }
 
@@ -180,6 +219,8 @@ async function getJob(titleId: string) {
     skipped_count: 0,
     failed_count: 0,
     error: null,
+    provider: selection.provider,
+    model: selection.model,
   };
 }
 
@@ -208,7 +249,11 @@ async function getImagesToTranslate(titleId: string) {
   return result.rows;
 }
 
-async function runBulkTranslate(titleId: string, requestUrl: string) {
+async function runBulkTranslate(
+  titleId: string,
+  requestUrl: string,
+  selection: ImageAiSelection
+) {
   if (runningJobs.has(titleId)) return;
   runningJobs.add(titleId);
   stoppedJobs.delete(titleId);
@@ -226,11 +271,13 @@ async function runBulkTranslate(titleId: string, requestUrl: string) {
          skipped_count,
          failed_count,
          error,
+         provider,
+         model,
          started_at,
          finished_at,
          updated_at
        )
-       VALUES ($1, 'running', $2, 0, $3, 0, 0, NULL, NOW(), NULL, NOW())
+       VALUES ($1, 'running', $2, 0, $3, 0, 0, NULL, $4, $5, NOW(), NULL, NOW())
        ON CONFLICT (manga_title_id) DO UPDATE SET
          status = 'running',
          total_count = EXCLUDED.total_count,
@@ -239,10 +286,18 @@ async function runBulkTranslate(titleId: string, requestUrl: string) {
          skipped_count = 0,
          failed_count = 0,
          error = NULL,
+         provider = EXCLUDED.provider,
+         model = EXCLUDED.model,
          started_at = NOW(),
          finished_at = NULL,
          updated_at = NOW()`,
-      [titleId, counts.total_count, counts.translated_count]
+      [
+        titleId,
+        counts.total_count,
+        counts.translated_count,
+        selection.provider,
+        selection.model,
+      ]
     );
 
     let processed = 0;
@@ -276,7 +331,7 @@ async function runBulkTranslate(titleId: string, requestUrl: string) {
           skipped += 1;
           translated += 1;
         } else {
-          await translateWithRetry(image, requestUrl);
+          await translateWithRetry(image, requestUrl, selection);
           translated += 1;
         }
       } catch (error) {
@@ -344,11 +399,13 @@ function responseFromJob(job: JobRow) {
     skippedCount: job.skipped_count,
     failedCount: job.failed_count,
     error: job.error,
+    provider: job.provider,
+    model: job.model,
   });
 }
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -359,7 +416,25 @@ export async function GET(
     );
   }
 
-  return responseFromJob(await getJob(id));
+  const url = new URL(request.url);
+  let selection: ImageAiSelection;
+  try {
+    selection = resolveImageAiSelection(
+      url.searchParams.get("provider") || undefined,
+      url.searchParams.get("model") || undefined
+    );
+  } catch (error) {
+    return Response.json(
+      {
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "AI model is invalid.",
+      },
+      { status: 400 }
+    );
+  }
+
+  return responseFromJob(await getJob(id, selection));
 }
 
 export async function POST(
@@ -374,6 +449,24 @@ export async function POST(
     );
   }
 
+  const body = (await request.json().catch(() => ({}))) as {
+    model?: string;
+    provider?: string;
+  };
+  let selection: ImageAiSelection;
+  try {
+    selection = resolveImageAiSelection(body.provider, body.model);
+  } catch (error) {
+    return Response.json(
+      {
+        ok: false,
+        message:
+          error instanceof Error ? error.message : "AI model is invalid.",
+      },
+      { status: 400 }
+    );
+  }
+
   const titleResult = await pool.query("SELECT 1 FROM manga_titles WHERE id = $1", [
     id,
   ]);
@@ -384,13 +477,124 @@ export async function POST(
     );
   }
 
-  const currentJob = await getJob(id);
+  const currentJob = await getJob(id, selection);
   if (currentJob.status === "running" && runningJobs.has(id)) {
     return responseFromJob(currentJob);
   }
 
-  void runBulkTranslate(id, request.url);
-  return responseFromJob(await getJob(id));
+  void runBulkTranslate(id, request.url, selection);
+  return responseFromJob(await getJob(id, selection));
+}
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  if (!/^\d+$/.test(id)) {
+    return Response.json(
+      { ok: false, message: "Invalid title ID" },
+      { status: 400 }
+    );
+  }
+
+  let body: { action?: string; confirmation?: string } = {};
+  try {
+    body = (await request.json()) as {
+      action?: string;
+      confirmation?: string;
+    };
+  } catch {
+    return Response.json(
+      { ok: false, message: "Invalid request" },
+      { status: 400 }
+    );
+  }
+
+  if (
+    body.action !== "reset" ||
+    body.confirmation !== "RESET_TITLE_TRANSLATIONS"
+  ) {
+    return Response.json(
+      { ok: false, message: "Confirmation does not match" },
+      { status: 400 }
+    );
+  }
+
+  if (runningJobs.has(id)) {
+    return Response.json(
+      {
+        ok: false,
+        message: "Please stop bulk translation before resetting.",
+      },
+      { status: 409 }
+    );
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const titleResult = await client.query<{ title: string }>(
+      `SELECT title
+       FROM manga_titles
+       WHERE id = $1
+       FOR UPDATE`,
+      [id]
+    );
+    const title = titleResult.rows[0];
+    if (!title) {
+      await client.query("ROLLBACK");
+      return Response.json(
+        { ok: false, message: "Title not found" },
+        { status: 404 }
+      );
+    }
+
+    const deletedResult = await client.query(
+      `DELETE FROM manga_ai_responses r
+       USING chapter_images i, manga_chapters c
+       WHERE r.image_id = i.id
+         AND i.chapter_id = c.id
+         AND c.manga_title_id = $1
+         AND r.action = 'translate'`,
+      [id]
+    );
+    await client.query(
+      "DELETE FROM manga_ai_bulk_jobs WHERE manga_title_id = $1",
+      [id]
+    );
+    await client.query("COMMIT");
+
+    const selection = resolveImageAiSelection();
+    const counts = await getImageCounts(id);
+    return Response.json({
+      ok: true,
+      status: "idle",
+      totalCount: counts.total_count,
+      processedCount: 0,
+      translatedCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      deletedCount: deletedResult.rowCount ?? 0,
+      message: `${title.title}: translations reset.`,
+      provider: selection.provider,
+      model: selection.model,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    return Response.json(
+      {
+        ok: false,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not reset translations",
+      },
+      { status: 500 }
+    );
+  } finally {
+    client.release();
+  }
 }
 
 export async function DELETE(
@@ -407,6 +611,11 @@ export async function DELETE(
 
   await ensureJobTable();
   stoppedJobs.add(id);
+  const currentJob = await getJob(id);
+  const selection = resolveImageAiSelection(
+    currentJob.provider || undefined,
+    currentJob.model || undefined
+  );
   const counts = await getImageCounts(id);
   await pool.query(
     `INSERT INTO manga_ai_bulk_jobs (
@@ -418,21 +627,31 @@ export async function DELETE(
        skipped_count,
        failed_count,
        error,
+       provider,
+       model,
        started_at,
        finished_at,
        updated_at
      )
-     VALUES ($1, 'stopped', $2, $3, $3, 0, 0, 'Stopped by user', NULL, NOW(), NOW())
+     VALUES ($1, 'stopped', $2, $3, $3, 0, 0, 'Stopped by user', $4, $5, NULL, NOW(), NOW())
      ON CONFLICT (manga_title_id) DO UPDATE SET
        status = 'stopped',
        total_count = EXCLUDED.total_count,
        processed_count = EXCLUDED.processed_count,
        translated_count = EXCLUDED.translated_count,
+       provider = EXCLUDED.provider,
+       model = EXCLUDED.model,
        error = 'Stopped by user',
        finished_at = NOW(),
        updated_at = NOW()`,
-    [id, counts.total_count, counts.translated_count]
+    [
+      id,
+      counts.total_count,
+      counts.translated_count,
+      selection.provider,
+      selection.model,
+    ]
   );
 
-  return responseFromJob(await getJob(id));
+  return responseFromJob(await getJob(id, selection));
 }

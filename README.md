@@ -233,3 +233,38 @@ Màn đọc manga:
 3. Nếu không thì render trực tiếp URL ảnh gốc.
 4. Người dùng chọn ảnh bằng checkbox tròn rồi mở AI chat bằng nút AI nổi.
 5. Translate image cache kết quả theo `image_id` trong DB để lần sau không gọi AI lại.
+
+### Amazon Bedrock image translation
+
+Image translation supports OpenClaw and Amazon Bedrock. Configure the allowed
+models in `.env.local`; AWS credentials remain server-side and are resolved by
+the standard AWS SDK credential chain.
+
+```env
+AI_TRANSLATION_PROVIDER=openclaw
+OPENCLAW_MODELS=openclaw
+
+BEDROCK_REGION=us-east-1
+BEDROCK_MODELS=amazon.nova-lite-v1:0,amazon.nova-pro-v1:0
+BEDROCK_DEFAULT_MODEL=amazon.nova-lite-v1:0
+
+# Use these only when the server does not have an IAM role or AWS profile.
+AWS_ACCESS_KEY_ID=replace-me
+AWS_SECRET_ACCESS_KEY=replace-me
+# AWS_SESSION_TOKEN=replace-me
+```
+
+The IAM principal needs `bedrock:InvokeModel` permission and model access in
+the configured region. The model dropdown is populated from `OPENCLAW_MODELS`
+and `BEDROCK_MODELS`. Bulk Translate has the same provider/model selector as
+the reader and stores that selection with its background job. Translation
+cache is image-specific: any provider/model result marks the image completed.
+
+The reader also accepts an optional custom OpenClaw model name. Leaving this
+field empty uses `OPENCLAW_MODEL`; entering a value overrides the model only
+for image translation, image chat, and uncached phrase analysis requests.
+Bedrock model names remain restricted to `BEDROCK_MODELS`. Cached translations
+and phrase analyses are still read from the database without calling a model.
+Manual and bulk image translation use the newest cached translation regardless
+of provider/model. AI is called only when the image has no translation in the
+database.

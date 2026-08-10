@@ -410,8 +410,44 @@
 }
 
 .actions {
+  display: grid;
+  gap: 8px;
   padding: 10px 13px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.modelSelect {
+  display: grid;
+  gap: 5px;
+}
+
+.modelSelect span {
+  color: #77869c;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.modelSelect select,
+.modelSelect input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 9px;
+  outline: none;
+  background: #111d2f;
+  color: #dce8fa;
+  font: inherit;
+  font-size: 12px;
+}
+
+.modelSelect select:focus,
+.modelSelect input:focus {
+  border-color: #397cec;
+}
+
+.modelSelect input::placeholder {
+  color: #64748b;
 }
 
 .translateButton {

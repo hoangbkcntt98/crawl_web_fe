@@ -2,21 +2,26 @@ import { NextResponse } from "next/server";
 import {
   getAiImage,
   getCachedImageTranslation,
-  requestOpenClaw,
+  requestImageAi,
   saveAiResponse,
   translateImageWithAi,
   type ApiResponse,
 } from "@/lib/aiTranslation";
+import { resolveImageAiSelection } from "@/lib/aiModels";
 
 type AiRequest =
   | {
       action: "translate";
       imageId: string;
+      model?: string;
+      provider?: string;
     }
   | {
       action: "chat";
       imageId: string;
       message: string;
+      model?: string;
+      provider?: string;
     };
 
 export async function POST(request: Request) {
@@ -62,6 +67,19 @@ export async function POST(request: Request) {
     );
   }
 
+  let selection;
+  try {
+    selection = resolveImageAiSelection(body.provider, body.model);
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "AI model is invalid.",
+      },
+      { status: 400 }
+    );
+  }
+
   if (body.action === "translate") {
     const cached = await getCachedImageTranslation(image.id);
     if (cached) {
@@ -75,13 +93,14 @@ export async function POST(request: Request) {
       apiResponse = await translateImageWithAi({
         image,
         requestUrl: request.url,
+        selection,
       });
     } else {
-      const { content, model } = await requestOpenClaw({
+      const { content, model } = await requestImageAi({
         image,
         message: body.message,
         requestUrl: request.url,
-        translate: false,
+        selection,
       });
       apiResponse = { kind: "chat", content };
       await saveAiResponse({

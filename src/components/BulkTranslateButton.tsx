@@ -6,6 +6,51 @@ import { apiPath } from "@/lib/paths";
 
 type BulkStatus = "idle" | "running" | "completed" | "failed" | "stopped";
 
+type AiModelOption = {
+  label: string;
+  model: string;
+  provider: "openclaw" | "bedrock";
+};
+
+type AiConfigResponse = {
+  defaultSelection?: Pick<AiModelOption, "model" | "provider">;
+  models?: AiModelOption[];
+};
+
+function selectedAiRequest(
+  models: AiModelOption[],
+  selectedIndex: number,
+  openClawModel: string
+) {
+  const selected = models[selectedIndex] ?? models[0];
+  const customModel = openClawModel.trim();
+  return {
+    provider: selected?.provider,
+    ...(selected?.provider === "openclaw"
+      ? customModel
+        ? { model: customModel }
+        : {}
+      : { model: selected?.model }),
+  };
+}
+
+function bulkStatusUrl(
+  titleId: string,
+  models: AiModelOption[],
+  selectedIndex: number,
+  openClawModel: string
+) {
+  const selection = selectedAiRequest(
+    models,
+    selectedIndex,
+    openClawModel
+  );
+  const search = new URLSearchParams();
+  if (selection.provider) search.set("provider", selection.provider);
+  if (selection.model) search.set("model", selection.model);
+  return `${apiPath(`/api/titles/${titleId}/bulk-translate`)}?${search}`;
+}
+
 export default function BulkTranslateButton({
   className,
   initialTotalCount,
@@ -26,6 +71,41 @@ export default function BulkTranslateButton({
   );
   const [failedCount, setFailedCount] = useState(0);
   const [message, setMessage] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [aiModels, setAiModels] = useState<AiModelOption[]>([
+    { label: "OpenClaw - openclaw", model: "openclaw", provider: "openclaw" },
+  ]);
+  const [selectedAiModel, setSelectedAiModel] = useState(0);
+  const [openClawModel, setOpenClawModel] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadAiConfig() {
+      try {
+        const response = await fetch(apiPath("/api/ai/config"), {
+          cache: "no-store",
+        });
+        const data = (await response.json()) as AiConfigResponse;
+        if (!response.ok || !data.models?.length || cancelled) return;
+
+        setAiModels(data.models);
+        const defaultIndex = data.models.findIndex(
+          (option) =>
+            option.provider === data.defaultSelection?.provider &&
+            option.model === data.defaultSelection?.model
+        );
+        setSelectedAiModel(defaultIndex >= 0 ? defaultIndex : 0);
+      } catch {
+        // Keep the OpenClaw fallback when config loading fails.
+      }
+    }
+
+    void loadAiConfig();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -40,7 +120,12 @@ export default function BulkTranslateButton({
 
       try {
         const response = await fetch(
-          apiPath(`/api/titles/${titleId}/bulk-translate`),
+          bulkStatusUrl(
+            titleId,
+            aiModels,
+            selectedAiModel,
+            openClawModel
+          ),
           { cache: "no-store" }
         );
         const data = await response.json();
@@ -55,6 +140,22 @@ export default function BulkTranslateButton({
         setTranslatedCount(data.translatedCount ?? initialTranslatedCount);
         setFailedCount(data.failedCount ?? 0);
         setMessage(data.failedCount && data.error ? data.error : "");
+        if (data.status === "running" && data.provider && data.model) {
+          const modelIndex = aiModels.findIndex(
+            (option) =>
+              option.provider === data.provider && option.model === data.model
+          );
+          if (modelIndex >= 0) {
+            setSelectedAiModel(modelIndex);
+            setOpenClawModel("");
+          } else if (data.provider === "openclaw") {
+            const openClawIndex = aiModels.findIndex(
+              (option) => option.provider === "openclaw"
+            );
+            if (openClawIndex >= 0) setSelectedAiModel(openClawIndex);
+            setOpenClawModel(data.model);
+          }
+        }
       } catch (error) {
         if (cancelled) return;
         setStatus("failed");
@@ -69,7 +170,14 @@ export default function BulkTranslateButton({
     return () => {
       cancelled = true;
     };
-  }, [initialTotalCount, initialTranslatedCount, titleId]);
+  }, [
+    aiModels,
+    initialTotalCount,
+    initialTranslatedCount,
+    openClawModel,
+    selectedAiModel,
+    titleId,
+  ]);
 
   useEffect(() => {
     if (status !== "running") return;
@@ -78,7 +186,12 @@ export default function BulkTranslateButton({
     const interval = window.setInterval(async () => {
       try {
         const response = await fetch(
-          apiPath(`/api/titles/${titleId}/bulk-translate`),
+          bulkStatusUrl(
+            titleId,
+            aiModels,
+            selectedAiModel,
+            openClawModel
+          ),
           { cache: "no-store" }
         );
         const data = await response.json();
@@ -113,7 +226,7 @@ export default function BulkTranslateButton({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [router, status, titleId]);
+  }, [aiModels, openClawModel, router, selectedAiModel, status, titleId]);
 
   async function startBulkTranslate() {
     setStatus("running");
@@ -124,7 +237,13 @@ export default function BulkTranslateButton({
     try {
       const response = await fetch(
         apiPath(`/api/titles/${titleId}/bulk-translate`),
-        { method: "POST" }
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(
+            selectedAiRequest(aiModels, selectedAiModel, openClawModel)
+          ),
+        }
       );
       const data = await response.json();
       if (!response.ok) {
@@ -172,11 +291,90 @@ export default function BulkTranslateButton({
     }
   }
 
+  async function resetTranslations() {
+    const confirmed = window.confirm(
+      "このタイトルのAI画像翻訳をすべて削除します。続行しますか？"
+    );
+    if (!confirmed) return;
+
+    setResetting(true);
+    setMessage("Resetting translations...");
+
+    try {
+      const response = await fetch(
+        apiPath(`/api/titles/${titleId}/bulk-translate`),
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "reset",
+            confirmation: "RESET_TITLE_TRANSLATIONS",
+          }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Reset translations failed");
+      }
+
+      setStatus("idle");
+      setTotalCount(data.totalCount ?? totalCount);
+      setProcessedCount(0);
+      setTranslatedCount(0);
+      setFailedCount(0);
+      setMessage(
+        `${data.deletedCount ?? 0} translation${
+          data.deletedCount === 1 ? "" : "s"
+        } deleted`
+      );
+      router.refresh();
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : "Reset translations failed"
+      );
+    } finally {
+      setResetting(false);
+    }
+  }
+
   const running = status === "running";
   const done = totalCount > 0 && translatedCount >= totalCount;
 
   return (
     <div className={className}>
+      <div className="bulkTranslateModelControls">
+        <label>
+          <span>AI model</span>
+          <select
+            aria-label="Bulk translation AI model"
+            disabled={running || resetting}
+            onChange={(event) =>
+              setSelectedAiModel(Number(event.target.value))
+            }
+            value={selectedAiModel}
+          >
+            {aiModels.map((option, index) => (
+              <option key={`${option.provider}-${option.model}`} value={index}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {aiModels[selectedAiModel]?.provider === "openclaw" ? (
+          <label>
+            <span>OpenClaw model (optional)</span>
+            <input
+              aria-label="Bulk translation custom OpenClaw model"
+              disabled={running || resetting}
+              maxLength={200}
+              onChange={(event) => setOpenClawModel(event.target.value)}
+              placeholder="Use OPENCLAW_MODEL"
+              type="text"
+              value={openClawModel}
+            />
+          </label>
+        ) : null}
+      </div>
       <div className="bulkTranslateButtons">
         <button
           data-done={done}
@@ -197,6 +395,14 @@ export default function BulkTranslateButton({
             Stop
           </button>
         )}
+        <button
+          data-variant="reset"
+          disabled={running || resetting || translatedCount === 0}
+          onClick={resetTranslations}
+          type="button"
+        >
+          {resetting ? "Resetting..." : "Reset translations"}
+        </button>
       </div>
       <small>
         {message ||

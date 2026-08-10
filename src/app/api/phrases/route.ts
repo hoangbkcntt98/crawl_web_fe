@@ -1,12 +1,15 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
-import { parseLooseJson, requestOpenClawText } from "@/lib/aiTranslation";
+import { parseLooseJson, requestTextAi } from "@/lib/aiTranslation";
+import { resolveImageAiSelection } from "@/lib/aiModels";
 
 type PhraseRequest = {
   action?: "ask" | "card";
   context?: string;
+  model?: string;
   phrase?: string;
+  provider?: string;
 };
 
 type PhraseAnalysis = {
@@ -135,6 +138,7 @@ export async function POST(request: Request) {
 
   try {
     await ensurePhraseTables();
+    const selection = resolveImageAiSelection(body.provider, body.model);
 
     const contextKey = context || "";
     const cachedResult = await pool.query<PhraseCacheRow>(
@@ -154,10 +158,11 @@ export async function POST(request: Request) {
     const cached = Boolean(analysis);
 
     if (!analysis) {
-      const aiResult = await requestOpenClawText({
+      const aiResult = await requestTextAi({
         maxTokens: 800,
         message: analysisPrompt(phrase, context),
         responseFormatJson: true,
+        selection,
         temperature: 0,
       });
       analysis = parseAnalysis(aiResult.content);
