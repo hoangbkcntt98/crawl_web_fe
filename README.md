@@ -268,3 +268,65 @@ and phrase analyses are still read from the database without calling a model.
 Manual and bulk image translation use the newest cached translation regardless
 of provider/model. AI is called only when the image has no translation in the
 database.
+
+### Background EPUB export to Google Drive
+
+The EPUB action on a title detail page creates the book in a background job,
+stores progress in `manga_epub_export_jobs`, uploads the finished file to Google
+Drive, and exposes the Drive view/download links in the UI. A title is split into
+EPUB parts of at most 100 readable chapters. Each part is uploaded and its local
+temporary file is removed before the next part is built. Apply the migrations:
+
+```bash
+psql "$DATABASE_URL" -f db/021_epub_export_jobs.sql
+psql "$DATABASE_URL" -f db/022_epub_export_parts.sql
+```
+
+Enable Google Drive API for the Google Cloud project, create a service account,
+and share the destination Drive folder with the service account email as an
+Editor. Configure one of the standard Google credential sources:
+
+```bash
+# Recommended: path to the service-account JSON file.
+GOOGLE_APPLICATION_CREDENTIALS=/secure/path/google-service-account.json
+
+# Alternative: the complete service-account JSON on one line.
+# GOOGLE_SERVICE_ACCOUNT_JSON={"type":"service_account",...}
+
+# Optional. Without this, the file is uploaded to the account's Drive root.
+GOOGLE_DRIVE_FOLDER_ID=your_google_drive_folder_id
+
+# Optional. Keep false for private files; true creates an anyone/reader link.
+GOOGLE_DRIVE_MAKE_PUBLIC=false
+```
+
+Service accounts have no personal Drive storage quota. They can upload only to
+a Google Workspace Shared Drive. For a normal My Drive folder, configure OAuth
+for the human Google account that owns the storage instead; OAuth takes priority
+over service-account credentials when all three values are present:
+
+```bash
+GOOGLE_DRIVE_OAUTH_CLIENT_ID=your_oauth_client_id
+GOOGLE_DRIVE_OAUTH_CLIENT_SECRET=your_oauth_client_secret
+GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN=your_offline_refresh_token
+```
+
+Alternatively, use the single `GOOGLE_DRIVE_OAUTH` setting. It accepts a raw
+refresh token (combined with the client ID/secret above), inline JSON containing
+all three values, or a path to such a JSON file:
+
+```bash
+GOOGLE_DRIVE_OAUTH=your_offline_refresh_token
+
+# Or:
+# GOOGLE_DRIVE_OAUTH=/secure/path/google-drive-oauth.json
+# {"client_id":"...","client_secret":"...","refresh_token":"..."}
+```
+
+Generate the refresh token with offline access and the
+`https://www.googleapis.com/auth/drive` scope. The configured Google user must
+have Editor access to `GOOGLE_DRIVE_FOLDER_ID`.
+
+Credentials stay server-side. Temporary EPUB files are removed after upload or
+failure. A process restart interrupts an active in-process export; opening the
+title again marks that job as failed so it can be retried.

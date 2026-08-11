@@ -23,6 +23,9 @@
 # misc
 .DS_Store
 *.pem
+/client_secret.json
+/google-drive-oauth.json
+/manga-uploader.json
 
 # debug
 npm-debug.log*

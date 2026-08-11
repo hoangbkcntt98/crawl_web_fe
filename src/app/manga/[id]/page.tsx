@@ -3,11 +3,11 @@ import { notFound, redirect } from "next/navigation";
 import BulkTranslateButton from "@/components/BulkTranslateButton";
 import ChapterCrawlButton from "@/components/ChapterCrawlButton";
 import CrawlAllChaptersButton from "@/components/CrawlAllChaptersButton";
+import EpubExportButton from "@/components/EpubExportButton";
 import FavoriteButton from "@/components/FavoriteButton";
 import SiteHeader from "@/components/SiteHeader";
 import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
-import { apiPath } from "@/lib/paths";
 import styles from "./page.module.css";
 
 type Manga = {
@@ -175,12 +175,9 @@ export default async function MangaDetailPage({
                     </div>
                   ) : null}
                   {readableChapters.length > 0 && (
-                    <a
-                      className={styles.epubButton}
-                      href={apiPath(`/api/titles/${manga.id}/epub`)}
-                    >
-                      ↓　EPUB
-                    </a>
+                    <div className={styles.epubButton}>
+                      <EpubExportButton titleId={manga.id} />
+                    </div>
                   )}
                 </div>
               )}

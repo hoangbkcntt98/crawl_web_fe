@@ -1,310 +1,374 @@
-import type { Archiver, ArchiverOptions } from "archiver";
-import { readFile } from "fs/promises";
-import { createRequire } from "module";
-import sharp from "sharp";
-import { PassThrough, Readable } from "stream";
+import { rm } from "fs/promises";
+import { after } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
 import { pool } from "@/lib/db";
+import { buildEpubFile, getEpubChapterBatches } from "@/lib/epub";
+import {
+  uploadEpubToGoogleDrive,
+  validateGoogleDriveDestination,
+} from "@/lib/googleDrive";
 
-const require = createRequire(import.meta.url);
-const createArchive = require("archiver") as (
-  format: "zip",
-  options?: ArchiverOptions
-) => Archiver;
-
-type MangaRow = {
-  id: string;
-  title: string;
+type JobRow = {
+  status: string;
+  phase: string;
+  total_count: number;
+  processed_count: number;
+  file_name: string | null;
+  drive_file_id: string | null;
+  drive_web_view_link: string | null;
+  drive_web_content_link: string | null;
+  file_size: string | null;
+  current_page_count: number;
+  current_page_total: number;
+  exported_files: ExportedFile[];
+  error: string | null;
 };
 
-type PageRow = {
-  chapter_id: string;
-  chapter_name: string;
-  position: number;
-  src: string;
-  local_path: string | null;
-  content_type: string | null;
+type ExportedFile = {
+  chapterCount: number;
+  downloadUrl: string;
+  fileId: string;
+  fileName: string;
+  fileSize: number | null;
+  firstChapterName: string;
+  lastChapterName: string;
+  partNumber: number;
+  viewUrl: string;
 };
 
-type EpubPage = {
-  id: string;
-  chapterId: string;
-  chapterName: string;
-  imageFile: string;
-  imageMediaType: string;
-  pageFile: string;
-};
+const runningExports = new Set<string>();
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function escapeXml(value: string) {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&apos;");
-}
-
-function safeFileName(value: string) {
-  const cleaned = value
-    .normalize("NFKC")
-    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  return (cleaned || "manga").slice(0, 120);
-}
-
-function imageType(contentType: string | null, src: string) {
-  const type = contentType?.split(";")[0].trim().toLowerCase();
-  if (type === "image/png") return { extension: "png", mediaType: type };
-  if (type === "image/gif") return { extension: "gif", mediaType: type };
-  if (type === "image/webp") return { extension: "webp", mediaType: type };
-  if (type === "image/avif") return { extension: "avif", mediaType: type };
-
-  const pathname = new URL(src).pathname.toLowerCase();
-  if (pathname.endsWith(".png")) {
-    return { extension: "png", mediaType: "image/png" };
-  }
-  if (pathname.endsWith(".gif")) {
-    return { extension: "gif", mediaType: "image/gif" };
-  }
-  if (pathname.endsWith(".webp")) {
-    return { extension: "webp", mediaType: "image/webp" };
-  }
-
-  return { extension: "jpg", mediaType: "image/jpeg" };
-}
-
-function pageXhtml(title: string, page: EpubPage) {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja" lang="ja">
-  <head>
-    <title>${escapeXml(title)} - ${escapeXml(page.chapterName)}</title>
-    <meta name="viewport" content="width=device-width, height=device-height"/>
-    <link rel="stylesheet" type="text/css" href="../styles/book.css"/>
-  </head>
-  <body>
-    <div class="page">
-      <img src="../${page.imageFile}" alt="${escapeXml(page.chapterName)}"/>
-    </div>
-  </body>
-</html>`;
-}
-
-function navigationXhtml(title: string, pages: EpubPage[]) {
-  const chapters = new Map<string, EpubPage>();
-  for (const page of pages) {
-    if (!chapters.has(page.chapterId)) chapters.set(page.chapterId, page);
-  }
-
-  const items = Array.from(chapters.values())
-    .map(
-      (page) =>
-        `<li><a href="pages/${page.pageFile}">${escapeXml(page.chapterName)}</a></li>`
+async function ensureJobTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS manga_epub_export_jobs (
+      manga_title_id BIGINT PRIMARY KEY REFERENCES manga_titles(id) ON DELETE CASCADE,
+      status TEXT NOT NULL DEFAULT 'idle',
+      phase TEXT NOT NULL DEFAULT 'idle',
+      total_count INTEGER NOT NULL DEFAULT 0,
+      processed_count INTEGER NOT NULL DEFAULT 0,
+      file_name TEXT,
+      drive_file_id TEXT,
+      drive_web_view_link TEXT,
+      drive_web_content_link TEXT,
+      file_size BIGINT,
+      error TEXT,
+      started_at TIMESTAMPTZ,
+      finished_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
-    .join("");
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE html>
-<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="ja" lang="ja">
-  <head><title>${escapeXml(title)}</title></head>
-  <body>
-    <nav epub:type="toc" id="toc">
-      <h1>${escapeXml(title)}</h1>
-      <ol>${items}</ol>
-    </nav>
-  </body>
-</html>`;
+  `);
+  await pool.query(`
+    ALTER TABLE manga_epub_export_jobs
+      ADD COLUMN IF NOT EXISTS current_page_count INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS current_page_total INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS exported_files JSONB NOT NULL DEFAULT '[]'::jsonb
+  `);
 }
 
-function packageOpf(manga: MangaRow, pages: EpubPage[]) {
-  const imageManifest = pages
-    .map(
-      (page) =>
-        `<item id="img-${page.id}" href="${page.imageFile}" media-type="${page.imageMediaType}"/>`
-    )
-    .join("\n    ");
-  const pageManifest = pages
-    .map(
-      (page) =>
-        `<item id="page-${page.id}" href="pages/${page.pageFile}" media-type="application/xhtml+xml"/>`
-    )
-    .join("\n    ");
-  const spine = pages
-    .map((page) => `<itemref idref="page-${page.id}"/>`)
-    .join("\n    ");
+function errorMessage(error: unknown) {
+  if (!(error instanceof Error)) return "EPUB export failed";
+  const cause = error.cause as { code?: string; message?: string } | undefined;
+  return cause?.code ? `${error.message}: ${cause.code}` : error.message;
+}
 
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="book-id" version="3.0" prefix="rendition: http://www.idpf.org/vocab/rendition/#">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
-    <dc:identifier id="book-id">manga-rw-${manga.id}</dc:identifier>
-    <dc:title>${escapeXml(manga.title)}</dc:title>
-    <dc:language>ja</dc:language>
-    <dc:creator>MangaRw</dc:creator>
-    <meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d{3}Z$/, "Z")}</meta>
-    <meta property="rendition:layout">pre-paginated</meta>
-    <meta property="rendition:orientation">auto</meta>
-    <meta property="rendition:spread">none</meta>
-  </metadata>
-  <manifest>
-    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
-    <item id="css" href="styles/book.css" media-type="text/css"/>
-    ${imageManifest}
-    ${pageManifest}
-  </manifest>
-  <spine page-progression-direction="rtl">
-    ${spine}
-  </spine>
-</package>`;
+function jobResponse(job: JobRow | null) {
+  return Response.json({
+    ok: true,
+    status: job?.status ?? "idle",
+    phase: job?.phase ?? "idle",
+    totalCount: job?.total_count ?? 0,
+    processedCount: job?.processed_count ?? 0,
+    fileName: job?.file_name ?? null,
+    driveFileId: job?.drive_file_id ?? null,
+    viewUrl: job?.drive_web_view_link ?? null,
+    downloadUrl: job?.drive_web_content_link ?? null,
+    fileSize: job?.file_size ? Number(job.file_size) : null,
+    currentPageCount: job?.current_page_count ?? 0,
+    currentPageTotal: job?.current_page_total ?? 0,
+    files: job?.exported_files ?? [],
+    error: job?.error ?? null,
+  });
+}
+
+async function getJob(titleId: string) {
+  await ensureJobTable();
+  const result = await pool.query<JobRow>(
+    `SELECT
+       status,
+       phase,
+       total_count,
+       processed_count,
+       file_name,
+       drive_file_id,
+       drive_web_view_link,
+       drive_web_content_link,
+       file_size::text,
+       current_page_count,
+       current_page_total,
+       exported_files,
+       error
+     FROM manga_epub_export_jobs
+     WHERE manga_title_id = $1`,
+    [titleId]
+  );
+  const job = result.rows[0] ?? null;
+
+  if (job?.status === "running" && !runningExports.has(titleId)) {
+    const interrupted = "EPUB export was interrupted. Please start it again.";
+    await pool.query(
+      `UPDATE manga_epub_export_jobs
+       SET status = 'failed',
+           phase = 'failed',
+           error = $2,
+           finished_at = NOW(),
+           updated_at = NOW()
+       WHERE manga_title_id = $1`,
+      [titleId, interrupted]
+    );
+    return { ...job, status: "failed", phase: "failed", error: interrupted };
+  }
+
+  return job;
+}
+
+async function runExport(titleId: string) {
+  const exportedFiles: ExportedFile[] = [];
+  try {
+    await pool.query(
+      `UPDATE manga_epub_export_jobs
+       SET phase = 'validating_drive', updated_at = NOW()
+       WHERE manga_title_id = $1`,
+      [titleId]
+    );
+    await validateGoogleDriveDestination();
+
+    const batches = await getEpubChapterBatches(titleId, 100);
+    if (!batches.length) {
+      throw new Error("No crawled chapter images available");
+    }
+    await pool.query(
+      `UPDATE manga_epub_export_jobs
+       SET phase = 'building',
+           total_count = $2,
+           processed_count = 0,
+           current_page_count = 0,
+           current_page_total = 0,
+           updated_at = NOW()
+       WHERE manga_title_id = $1`,
+      [titleId, batches.length]
+    );
+
+    for (const [index, batch] of batches.entries()) {
+      const partNumber = index + 1;
+      let directory: string | null = null;
+      try {
+        const epub = await buildEpubFile(titleId, {
+          chapterIds: batch.chapterIds,
+          partNumber,
+          totalParts: batches.length,
+          onProgress: async (processed, total) => {
+            await pool.query(
+              `UPDATE manga_epub_export_jobs
+               SET phase = 'building',
+                   current_page_count = $2,
+                   current_page_total = $3,
+                   updated_at = NOW()
+               WHERE manga_title_id = $1`,
+              [titleId, processed, total]
+            );
+          },
+        });
+        directory = epub.directory;
+
+        await pool.query(
+          `UPDATE manga_epub_export_jobs
+           SET phase = 'uploading',
+               file_name = $2,
+               current_page_count = $3,
+               current_page_total = $3,
+               updated_at = NOW()
+           WHERE manga_title_id = $1`,
+          [titleId, epub.fileName, epub.pageCount]
+        );
+
+        const driveFile = await uploadEpubToGoogleDrive(
+          epub.filePath,
+          epub.fileName
+        );
+        exportedFiles.push({
+          chapterCount: batch.chapterCount,
+          downloadUrl: driveFile.webContentLink,
+          fileId: driveFile.id,
+          fileName: driveFile.name,
+          fileSize: driveFile.size,
+          firstChapterName: batch.firstChapterName,
+          lastChapterName: batch.lastChapterName,
+          partNumber,
+          viewUrl: driveFile.webViewLink,
+        });
+
+        await pool.query(
+          `UPDATE manga_epub_export_jobs
+           SET processed_count = $2,
+               file_name = $3,
+               drive_file_id = $4,
+               drive_web_view_link = $5,
+               drive_web_content_link = $6,
+               file_size = COALESCE(file_size, 0) + COALESCE($7::bigint, 0),
+               exported_files = $8::jsonb,
+               current_page_count = 0,
+               current_page_total = 0,
+               error = NULL,
+               updated_at = NOW()
+           WHERE manga_title_id = $1`,
+          [
+            titleId,
+            partNumber,
+            driveFile.name,
+            driveFile.id,
+            driveFile.webViewLink,
+            driveFile.webContentLink,
+            driveFile.size,
+            JSON.stringify(exportedFiles),
+          ]
+        );
+      } finally {
+        if (directory) await rm(directory, { force: true, recursive: true });
+      }
+    }
+
+    await pool.query(
+      `UPDATE manga_epub_export_jobs
+       SET status = 'completed',
+           phase = 'completed',
+           processed_count = total_count,
+           current_page_count = 0,
+           current_page_total = 0,
+           error = NULL,
+           finished_at = NOW(),
+           updated_at = NOW()
+       WHERE manga_title_id = $1`,
+      [titleId]
+    );
+  } catch (error) {
+    await pool.query(
+      `UPDATE manga_epub_export_jobs
+       SET status = 'failed',
+           phase = 'failed',
+           error = $2,
+           finished_at = NOW(),
+           updated_at = NOW()
+       WHERE manga_title_id = $1`,
+      [titleId, errorMessage(error)]
+    );
+  } finally {
+    runningExports.delete(titleId);
+  }
+}
+
+async function requireUser() {
+  return Boolean(await getCurrentUser());
 }
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  if (!(await requireUser())) {
+    return Response.json({ ok: false, message: "Unauthorized" }, { status: 401 });
+  }
   const { id } = await params;
   if (!/^\d+$/.test(id)) {
-    return Response.json({ message: "Invalid title ID" }, { status: 400 });
+    return Response.json({ ok: false, message: "Invalid title ID" }, { status: 400 });
   }
 
-  const [mangaResult, pageResult] = await Promise.all([
-    pool.query<MangaRow>(
-      `SELECT id, title FROM manga_titles WHERE id = $1`,
-      [id]
-    ),
-    pool.query<PageRow>(
-      `SELECT
-         c.id AS chapter_id,
-         c.name AS chapter_name,
-         i.position,
-         i.src,
-         i.local_path,
-         i.content_type
-       FROM manga_chapters c
-       JOIN manga_titles m ON m.id = c.manga_title_id
-       JOIN crawler_sites s ON s.site_key = m.site_key
-       JOIN chapter_images i ON i.chapter_id = c.id
-       WHERE c.manga_title_id = $1
-         AND (
-           s.store_images_locally = FALSE
-           OR i.local_path IS NOT NULL
-         )
-       ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC, i.position ASC`,
-      [id]
-    ),
-  ]);
+  return jobResponse(await getJob(id));
+}
 
-  const manga = mangaResult.rows[0];
-  if (!manga) {
-    return Response.json({ message: "Title not found" }, { status: 404 });
+export async function POST(
+  _request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  if (!(await requireUser())) {
+    return Response.json({ ok: false, message: "Unauthorized" }, { status: 401 });
   }
-  if (pageResult.rows.length === 0) {
+  const { id } = await params;
+  if (!/^\d+$/.test(id)) {
+    return Response.json({ ok: false, message: "Invalid title ID" }, { status: 400 });
+  }
+
+  const titleResult = await pool.query(
+    `SELECT 1
+     FROM manga_titles m
+     JOIN crawler_sites s ON s.site_key = m.site_key
+     WHERE m.id = $1
+       AND EXISTS (
+         SELECT 1
+         FROM manga_chapters c
+         JOIN chapter_images i ON i.chapter_id = c.id
+         WHERE c.manga_title_id = m.id
+           AND (s.store_images_locally = FALSE OR i.local_path IS NOT NULL)
+       )`,
+    [id]
+  );
+  if (!titleResult.rowCount) {
     return Response.json(
-      { message: "No crawled chapter images available" },
+      { ok: false, message: "Title has no crawled chapter images" },
       { status: 409 }
     );
   }
 
-  const output = new PassThrough();
-  const archive = createArchive("zip", { zlib: { level: 6 } });
-  archive.pipe(output);
+  const current = await getJob(id);
+  if (current?.status === "running" && runningExports.has(id)) {
+    return jobResponse(current);
+  }
 
-  void (async () => {
-    try {
-      archive.append("application/epub+zip", {
-        name: "mimetype",
-        store: true,
-      });
-      archive.append(
-        `<?xml version="1.0" encoding="UTF-8"?>
-<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
-  <rootfiles>
-    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
-  </rootfiles>
-</container>`,
-        { name: "META-INF/container.xml" }
-      );
-      archive.append(
-        "html,body{margin:0;padding:0;background:#fff}.page{display:flex;align-items:center;justify-content:center;width:100vw;height:100vh}.page img{display:block;max-width:100%;max-height:100%;object-fit:contain}",
-        { name: "OEBPS/styles/book.css" }
-      );
-
-      const epubPages: EpubPage[] = [];
-      for (const [index, row] of pageResult.rows.entries()) {
-        let imageBuffer: Buffer<ArrayBufferLike>;
-        let contentType = row.content_type;
-        if (row.local_path) {
-          imageBuffer = await readFile(row.local_path);
-        } else {
-          const response = await fetch(row.src, {
-            headers: {
-              "User-Agent":
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/136 Safari/537.36",
-            },
-            signal: AbortSignal.timeout(30_000),
-          });
-          if (!response.ok) {
-            throw new Error(`Could not download image ${row.src}`);
-          }
-          contentType = response.headers.get("content-type");
-          imageBuffer = Buffer.from(await response.arrayBuffer());
-        }
-
-        let type = imageType(contentType, row.src);
-        if (
-          type.mediaType === "image/webp" ||
-          type.mediaType === "image/avif"
-        ) {
-          imageBuffer = await sharp(imageBuffer)
-            .jpeg({ quality: 90, mozjpeg: true })
-            .toBuffer();
-          type = { extension: "jpg", mediaType: "image/jpeg" };
-        }
-
-        const pageId = String(index + 1).padStart(6, "0");
-        const page: EpubPage = {
-          id: pageId,
-          chapterId: row.chapter_id,
-          chapterName: row.chapter_name,
-          imageFile: `images/page-${pageId}.${type.extension}`,
-          imageMediaType: type.mediaType,
-          pageFile: `page-${pageId}.xhtml`,
-        };
-        epubPages.push(page);
-
-        archive.append(imageBuffer, {
-          name: `OEBPS/${page.imageFile}`,
-        });
-        archive.append(pageXhtml(manga.title, page), {
-          name: `OEBPS/pages/${page.pageFile}`,
-        });
-      }
-
-      archive.append(navigationXhtml(manga.title, epubPages), {
-        name: "OEBPS/nav.xhtml",
-      });
-      archive.append(packageOpf(manga, epubPages), {
-        name: "OEBPS/content.opf",
-      });
-      await archive.finalize();
-    } catch (error) {
-      archive.abort();
-      output.destroy(error instanceof Error ? error : new Error("EPUB failed"));
-    }
-  })();
-
-  const fileName = `${safeFileName(manga.title)}.epub`;
-  return new Response(
-    Readable.toWeb(output) as ReadableStream<Uint8Array>,
-    {
-      headers: {
-        "Cache-Control": "no-store",
-        "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(fileName)}`,
-        "Content-Type": "application/epub+zip",
-      },
-    }
+  await pool.query(
+    `INSERT INTO manga_epub_export_jobs (
+       manga_title_id,
+       status,
+       phase,
+       total_count,
+       processed_count,
+       file_name,
+       drive_file_id,
+       drive_web_view_link,
+       drive_web_content_link,
+       file_size,
+       current_page_count,
+       current_page_total,
+       exported_files,
+       error,
+       started_at,
+       finished_at,
+       updated_at
+     )
+     VALUES ($1, 'running', 'building', 0, 0, NULL, NULL, NULL, NULL, NULL, 0, 0, '[]'::jsonb, NULL, NOW(), NULL, NOW())
+     ON CONFLICT (manga_title_id) DO UPDATE SET
+       status = 'running',
+       phase = 'building',
+       total_count = 0,
+       processed_count = 0,
+       file_name = NULL,
+       drive_file_id = NULL,
+       drive_web_view_link = NULL,
+       drive_web_content_link = NULL,
+       file_size = NULL,
+       current_page_count = 0,
+       current_page_total = 0,
+       exported_files = '[]'::jsonb,
+       error = NULL,
+       started_at = NOW(),
+       finished_at = NULL,
+       updated_at = NOW()`,
+    [id]
   );
+
+  runningExports.add(id);
+  after(() => runExport(id));
+  return jobResponse(await getJob(id));
 }
