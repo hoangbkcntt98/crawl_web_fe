@@ -5,7 +5,7 @@ import { parseLooseJson, requestTextAi } from "@/lib/aiTranslation";
 import { resolveImageAiSelection } from "@/lib/aiModels";
 
 type PhraseRequest = {
-  action?: "ask" | "card";
+  action?: "ask";
   context?: string;
   model?: string;
   phrase?: string;
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
   const phrase = body.phrase?.trim() ?? "";
   const context = body.context?.trim() ?? "";
 
-  if ((action !== "ask" && action !== "card") || !phrase || phrase.length > 120) {
+  if (action !== "ask" || !phrase || phrase.length > 120) {
     return NextResponse.json(
       { error: "Phrase request is invalid." },
       { status: 400 }
@@ -142,25 +142,12 @@ export async function POST(request: Request) {
       );
     }
 
-    if (action === "card") {
-      await pool.query(
-        `INSERT INTO app_flashcards (user_id, front, back, source_context)
-         VALUES ($1, $2, $3::jsonb, $4)
-         ON CONFLICT (user_id, front) DO UPDATE SET
-           back = EXCLUDED.back,
-           source_context = EXCLUDED.source_context,
-           updated_at = NOW()`,
-        [user.id, phrase, JSON.stringify({ ...analysis, model }), context || null]
-      );
-    }
-
     return NextResponse.json({
       ok: true,
       action,
       phrase,
       analysis,
       cached,
-      saved: action === "card",
     });
   } catch (error) {
     const message =

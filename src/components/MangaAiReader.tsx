@@ -50,7 +50,6 @@ type Message = {
   phraseAnalysis?: {
     context: string;
     phrase: string;
-    saved?: boolean;
     value: PhraseAnalysis;
   };
   ankiResult?: {
@@ -79,11 +78,10 @@ type AiConfigResponse = {
 };
 
 type PhraseResponse = {
-  action?: "ask" | "card";
+  action?: "ask";
   analysis?: PhraseAnalysis;
   error?: string;
   phrase?: string;
-  saved?: boolean;
 };
 
 type AnkiResponse = {
@@ -159,16 +157,10 @@ function normalizePhrase(part: string) {
 
 function PhraseAnalysisView({
   analysis,
-  disabled,
-  onCreateCard,
   phrase,
-  saved,
 }: {
   analysis: PhraseAnalysis;
-  disabled?: boolean;
-  onCreateCard?: () => void;
   phrase: string;
-  saved?: boolean;
 }) {
   return (
     <div className={styles.phraseAnalysis}>
@@ -191,18 +183,6 @@ function PhraseAnalysisView({
         </div>
       ) : null}
       {analysis.grammar ? <p>文法: {analysis.grammar}</p> : null}
-      {saved ? (
-        <em>Flash card saved.</em>
-      ) : onCreateCard ? (
-        <button
-          className={styles.phraseCardButton}
-          disabled={disabled}
-          onClick={onCreateCard}
-          type="button"
-        >
-          Tạo Card
-        </button>
-      ) : null}
     </div>
   );
 }
@@ -463,14 +443,14 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
     }
   };
 
-  const requestPhrase = async (action: "ask" | "card" | "anki") => {
+  const requestPhrase = async (action: "ask" | "anki") => {
     if (!activePhrase || phraseLoading) return;
     const { context, phrase } = activePhrase;
     if (action === "anki") {
       await requestAnki(phrase, context);
       return;
     }
-    await requestPhraseAction(action, phrase, context);
+    await requestPhraseAction(phrase, context);
   };
 
   const requestAnki = async (phrase: string, context: string) => {
@@ -525,7 +505,6 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
   };
 
   const requestPhraseAction = async (
-    action: "ask" | "card",
     phrase: string,
     context: string
   ) => {
@@ -537,7 +516,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
       {
         id: Date.now(),
         role: "user",
-        text: `${action === "card" ? "Create flash card" : "Ask AI"}: ${phrase}`,
+        text: `Ask AI: ${phrase}`,
       },
     ]);
 
@@ -546,7 +525,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action,
+          action: "ask",
           context,
           phrase,
           ...getSelectedAiRequest(),
@@ -566,7 +545,6 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
           phraseAnalysis: {
             context,
             phrase: result.phrase || phrase,
-            saved: result.saved,
             value: analysis,
           },
         },
@@ -730,13 +708,6 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                                 Hỏi AI
                               </button>
                               <button
-                                disabled={phraseLoading}
-                                onClick={() => void requestPhrase("card")}
-                                type="button"
-                              >
-                                Tạo Card (AI)
-                              </button>
-                              <button
                                 className={styles.phraseAnkiButton}
                                 disabled={phraseLoading}
                                 onClick={() => void requestPhrase("anki")}
@@ -793,19 +764,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                   ) : message.phraseAnalysis ? (
                     <PhraseAnalysisView
                       analysis={message.phraseAnalysis.value}
-                      disabled={phraseLoading}
-                      onCreateCard={
-                        message.phraseAnalysis.saved
-                          ? undefined
-                          : () =>
-                              void requestPhraseAction(
-                                "card",
-                                message.phraseAnalysis?.phrase ?? "",
-                                message.phraseAnalysis?.context ?? ""
-                              )
-                      }
                       phrase={message.phraseAnalysis.phrase}
-                      saved={message.phraseAnalysis.saved}
                     />
                   ) : (
                     message.text

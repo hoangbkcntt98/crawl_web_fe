@@ -304,12 +304,6 @@
   font-weight: 900;
 }
 
-.phraseMenu button:nth-child(2) {
-  border-color: rgba(49, 214, 142, 0.36);
-  background: rgba(26, 154, 103, 0.14);
-  color: #89e4b9;
-}
-
 .phraseMenu .phraseAnkiButton {
   border-color: rgba(190, 130, 255, 0.48);
   background: rgba(128, 72, 210, 0.18);
@@ -432,24 +426,6 @@
   font-size: 11px;
   font-style: normal;
   font-weight: 900;
-}
-
-.phraseCardButton {
-  width: fit-content;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid rgba(49, 214, 142, 0.42);
-  border-radius: 9px;
-  background: rgba(26, 154, 103, 0.16);
-  color: #89e4b9;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.phraseCardButton:disabled {
-  cursor: wait;
-  opacity: 0.62;
 }
 
 .typing::after {
