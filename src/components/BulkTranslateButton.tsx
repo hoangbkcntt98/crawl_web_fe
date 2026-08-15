@@ -27,9 +27,7 @@ function selectedAiRequest(
   return {
     provider: selected?.provider,
     ...(selected?.provider === "openclaw"
-      ? customModel
-        ? { model: customModel }
-        : {}
+      ? { model: customModel || selected.model }
       : { model: selected?.model }),
   };
 }
@@ -72,6 +70,7 @@ export default function BulkTranslateButton({
   const [failedCount, setFailedCount] = useState(0);
   const [message, setMessage] = useState("");
   const [resetting, setResetting] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [aiModels, setAiModels] = useState<AiModelOption[]>([
     { label: "OpenClaw - openclaw", model: "openclaw", provider: "openclaw" },
   ]);
@@ -106,6 +105,17 @@ export default function BulkTranslateButton({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!settingsOpen) return;
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setSettingsOpen(false);
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [settingsOpen]);
 
   useEffect(() => {
     let cancelled = false;
@@ -339,47 +349,22 @@ export default function BulkTranslateButton({
 
   const running = status === "running";
   const done = totalCount > 0 && translatedCount >= totalCount;
+  const selectedModel = aiModels[selectedAiModel] ?? aiModels[0];
+  const activeModel =
+    selectedModel?.provider === "openclaw"
+      ? openClawModel.trim() || selectedModel.model
+      : selectedModel?.model;
+  const modelSummary = selectedModel
+    ? `${selectedModel.provider === "openclaw" ? "OpenClaw" : "Amazon Bedrock"} - ${activeModel}`
+    : "AI model unavailable";
 
   return (
     <div className={className}>
-      <div className="bulkTranslateModelControls">
-        <label>
-          <span>AI model</span>
-          <select
-            aria-label="Bulk translation AI model"
-            disabled={running || resetting}
-            onChange={(event) =>
-              setSelectedAiModel(Number(event.target.value))
-            }
-            value={selectedAiModel}
-          >
-            {aiModels.map((option, index) => (
-              <option key={`${option.provider}-${option.model}`} value={index}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {aiModels[selectedAiModel]?.provider === "openclaw" ? (
-          <label>
-            <span>OpenClaw model (optional)</span>
-            <input
-              aria-label="Bulk translation custom OpenClaw model"
-              disabled={running || resetting}
-              maxLength={200}
-              onChange={(event) => setOpenClawModel(event.target.value)}
-              placeholder="Use OPENCLAW_MODEL"
-              type="text"
-              value={openClawModel}
-            />
-          </label>
-        ) : null}
-      </div>
       <div className="bulkTranslateButtons">
         <button
           data-done={done}
           disabled={running || totalCount === 0}
-          onClick={startBulkTranslate}
+          onClick={() => setSettingsOpen(true)}
           type="button"
         >
           {running
@@ -404,12 +389,103 @@ export default function BulkTranslateButton({
           {resetting ? "Resetting..." : "Reset translations"}
         </button>
       </div>
-      <small>
+      <small className="bulkTranslateModelSummary">Model: {modelSummary}</small>
+      <small className="bulkTranslateStatus">
         {message ||
           `${translatedCount}/${totalCount} translated${
             failedCount ? `, ${failedCount} failed` : ""
           }`}
       </small>
+      {settingsOpen ? (
+        <div
+          className="bulkTranslateModalBackdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSettingsOpen(false);
+          }}
+        >
+          <section
+            aria-labelledby="bulk-translate-settings-title"
+            aria-modal="true"
+            className="bulkTranslateModal"
+            role="dialog"
+          >
+            <div className="bulkTranslateModalHeader">
+              <div>
+                <h2 id="bulk-translate-settings-title">Bulk Translate</h2>
+                <p>Select the AI model for this translation job.</p>
+              </div>
+              <button
+                aria-label="Close bulk translation settings"
+                data-variant="modal-close"
+                onClick={() => setSettingsOpen(false)}
+                type="button"
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="bulkTranslateModelControls">
+              <label>
+                <span>AI model</span>
+                <select
+                  aria-label="Bulk translation AI model"
+                  autoFocus
+                  onChange={(event) => {
+                    const nextIndex = Number(event.target.value);
+                    const nextSelection = aiModels[nextIndex];
+                    setSelectedAiModel(nextIndex);
+                    if (nextSelection?.provider === "openclaw") {
+                      setOpenClawModel("");
+                    }
+                  }}
+                  value={selectedAiModel}
+                >
+                  {aiModels.map((option, index) => (
+                    <option
+                      key={`${option.provider}-${option.model}`}
+                      value={index}
+                    >
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedModel?.provider === "openclaw" ? (
+                <label>
+                  <span>OpenClaw model (optional)</span>
+                  <input
+                    aria-label="Bulk translation custom OpenClaw model"
+                    maxLength={200}
+                    onChange={(event) => setOpenClawModel(event.target.value)}
+                    placeholder={`Default: ${selectedModel.model}`}
+                    type="text"
+                    value={openClawModel}
+                  />
+                </label>
+              ) : null}
+            </div>
+
+            <div className="bulkTranslateModalActions">
+              <button
+                data-variant="cancel"
+                onClick={() => setSettingsOpen(false)}
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setSettingsOpen(false);
+                  void startBulkTranslate();
+                }}
+                type="button"
+              >
+                Start translation
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
     </div>
   );
 }

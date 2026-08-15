@@ -1,7 +1,7 @@
 import { rm } from "fs/promises";
 import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { databaseDialect, pool } from "@/lib/db";
+import { pool } from "@/lib/db";
 import { buildEpubFile, getEpubChapterBatches } from "@/lib/epub";
 import {
   uploadEpubToGoogleDrive,
@@ -36,81 +36,10 @@ type ExportedFile = {
   viewUrl: string;
 };
 
-type ColumnRow = {
-  column_name: string;
-};
-
 const runningExports = new Set<string>();
-let jobTablePromise: Promise<void> | null = null;
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-async function initializeJobTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS manga_epub_export_jobs (
-      manga_title_id BIGINT PRIMARY KEY REFERENCES manga_titles(id) ON DELETE CASCADE,
-      status TEXT NOT NULL DEFAULT 'idle',
-      phase TEXT NOT NULL DEFAULT 'idle',
-      total_count INTEGER NOT NULL DEFAULT 0,
-      processed_count INTEGER NOT NULL DEFAULT 0,
-      file_name TEXT,
-      drive_file_id TEXT,
-      drive_web_view_link TEXT,
-      drive_web_content_link TEXT,
-      file_size BIGINT,
-      error TEXT,
-      started_at TIMESTAMPTZ,
-      finished_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  if (databaseDialect === "mysql") {
-    const columnResult = await pool.query<ColumnRow>(
-      `SELECT LOWER(COLUMN_NAME) AS column_name
-       FROM INFORMATION_SCHEMA.COLUMNS
-       WHERE TABLE_SCHEMA = DATABASE()
-         AND TABLE_NAME = 'manga_epub_export_jobs'`
-    );
-    const columns = new Set(columnResult.rows.map((row) => row.column_name));
-    const missingColumns = [
-      [
-        "current_page_count",
-        "ADD COLUMN current_page_count INTEGER NOT NULL DEFAULT 0",
-      ],
-      [
-        "current_page_total",
-        "ADD COLUMN current_page_total INTEGER NOT NULL DEFAULT 0",
-      ],
-      [
-        "exported_files",
-        "ADD COLUMN exported_files JSON NOT NULL DEFAULT (JSON_ARRAY())",
-      ],
-    ] as const;
-
-    for (const [column, definition] of missingColumns) {
-      if (!columns.has(column)) {
-        await pool.query(`ALTER TABLE manga_epub_export_jobs ${definition}`);
-      }
-    }
-  } else {
-    await pool.query(`
-      ALTER TABLE manga_epub_export_jobs
-        ADD COLUMN IF NOT EXISTS current_page_count INTEGER NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS current_page_total INTEGER NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS exported_files JSONB NOT NULL DEFAULT '[]'::jsonb
-    `);
-  }
-}
-
-async function ensureJobTable() {
-  jobTablePromise ??= initializeJobTable().catch((error) => {
-    jobTablePromise = null;
-    throw error;
-  });
-  await jobTablePromise;
-}
 
 function errorMessage(error: unknown) {
   if (!(error instanceof Error)) return "EPUB export failed";
@@ -151,7 +80,6 @@ function jobResponse(job: JobRow | null) {
 }
 
 async function getJob(titleId: string) {
-  await ensureJobTable();
   const result = await pool.query<JobRow>(
     `SELECT
        status,

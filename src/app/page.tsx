@@ -1,4 +1,4 @@
-import { databaseDialect, ensureLibraryIndexes, pool } from "@/lib/db";
+import { databaseDialect, pool } from "@/lib/db";
 import { reconcileStoppedCrawlers } from "@/lib/crawler";
 import CrawlButton from "@/components/CrawlButton";
 import HomeHeaderActions from "@/components/HomeHeaderActions";
@@ -93,7 +93,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const { page, q, filter, chapters, site, sort } = await searchParams;
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  await Promise.all([reconcileStoppedCrawlers(), ensureLibraryIndexes()]);
+  await reconcileStoppedCrawlers();
   const rawSite = Array.isArray(site) ? site[0] : site;
   const selectedSite = rawSite?.trim() ?? "";
   const sitesResult = await pool.query<CrawlerSite>(

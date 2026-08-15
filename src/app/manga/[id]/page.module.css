@@ -236,6 +236,12 @@
   gap: 9px;
 }
 
+.bulkTranslateAction {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .bulkTranslateAction :global(.bulkTranslateButtons) {
   display: flex;
   align-items: center;
@@ -243,9 +249,8 @@
 }
 
 .bulkTranslateAction :global(.bulkTranslateModelControls) {
-  display: flex;
-  align-items: flex-end;
-  gap: 7px;
+  display: grid;
+  gap: 14px;
 }
 
 .bulkTranslateAction :global(.bulkTranslateModelControls label) {
@@ -261,9 +266,9 @@
 
 .bulkTranslateAction :global(.bulkTranslateModelControls select),
 .bulkTranslateAction :global(.bulkTranslateModelControls input) {
-  width: 190px;
-  min-height: 36px;
-  padding: 0 9px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 11px;
   border: 1px solid rgba(168, 117, 255, 0.35);
   border-radius: 8px;
   outline: none;
@@ -273,7 +278,74 @@
 }
 
 .bulkTranslateAction :global(.bulkTranslateModelControls input) {
-  width: 165px;
+  width: 100%;
+}
+
+.bulkTranslateAction :global(.bulkTranslateModelSummary) {
+  color: #a890d8;
+}
+
+.bulkTranslateAction :global(.bulkTranslateModalBackdrop) {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  padding: 20px;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 16, 0.78);
+  backdrop-filter: blur(4px);
+}
+
+.bulkTranslateAction :global(.bulkTranslateModal) {
+  width: min(440px, 100%);
+  padding: 22px;
+  border: 1px solid rgba(168, 117, 255, 0.32);
+  border-radius: 16px;
+  background: #0e1728;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.52);
+}
+
+.bulkTranslateAction :global(.bulkTranslateModalHeader) {
+  margin-bottom: 20px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.bulkTranslateAction :global(.bulkTranslateModalHeader h2) {
+  margin: 0 0 5px;
+  color: #f2f6ff;
+  font-size: 20px;
+}
+
+.bulkTranslateAction :global(.bulkTranslateModalHeader p) {
+  margin: 0;
+  color: #8493aa;
+  font-size: 12px;
+}
+
+.bulkTranslateAction button[data-variant="modal-close"] {
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-color: rgba(255, 255, 255, 0.1);
+  background: #19253a;
+  color: #aebbd0;
+  font-size: 21px;
+}
+
+.bulkTranslateAction :global(.bulkTranslateModalActions) {
+  margin-top: 22px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.bulkTranslateAction :global(.bulkTranslateModalActions) button[data-variant="cancel"] {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: #151f31;
+  color: #aebbd0;
 }
 
 .crawlAllAction button,
@@ -339,7 +411,7 @@
 
 .crawlAllAction small,
 .bulkTranslateAction small {
-  max-width: 220px;
+  max-width: 320px;
   overflow: hidden;
   color: #77869c;
   font-size: 11px;
@@ -543,14 +615,16 @@
   }
 
   .bulkTranslateAction :global(.bulkTranslateModelControls) {
-    align-items: stretch;
-    flex-direction: column;
-    width: min(100%, 240px);
+    width: 100%;
   }
 
   .bulkTranslateAction :global(.bulkTranslateModelControls select),
   .bulkTranslateAction :global(.bulkTranslateModelControls input) {
     width: 100%;
+  }
+
+  .bulkTranslateAction :global(.bulkTranslateModal) {
+    padding: 18px;
   }
 
   .crawlAllAction button,

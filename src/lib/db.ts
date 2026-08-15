@@ -24,6 +24,10 @@ const mysqlPool: MySqlPool | null =
         ...config,
         waitForConnections: true,
         connectionLimit: 10,
+        maxIdle: 2,
+        idleTimeout: 60_000,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 10_000,
         decimalNumbers: true,
       })
     : null;
@@ -160,23 +164,3 @@ export const pool: DatabasePool = {
     return mysqlPool!.end();
   },
 };
-
-let libraryIndexesPromise: Promise<void> | null = null;
-
-export function ensureLibraryIndexes() {
-  libraryIndexesPromise ??= Promise.all([
-    pool.query(
-      "CREATE INDEX IF NOT EXISTS manga_titles_site_key_idx ON manga_titles (site_key)"
-    ),
-    pool.query(
-      `CREATE INDEX IF NOT EXISTS manga_chapters_title_number_idx
-       ON manga_chapters (manga_title_id, chapter_number DESC, id DESC)`
-    ),
-  ])
-    .then(() => undefined)
-    .catch((error) => {
-      libraryIndexesPromise = null;
-      throw error;
-    });
-  return libraryIndexesPromise;
-}

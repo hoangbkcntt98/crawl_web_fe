@@ -95,9 +95,14 @@ Khi đọc từ DB, crawler cũng lấy thêm:
 - `store_images_locally`: site có lưu ảnh local không.
 - `local_image_storage_path`: nếu có thì lưu ảnh vào folder custom, nếu không thì dùng default `/home/opc/manga-storage`.
 
-### 2. Tạo hoặc migrate database
+### 2. Migrate database trước khi chạy
 
-Mỗi lần chạy, crawler gọi `create_tables(conn)` để đảm bảo schema tồn tại:
+Schema phải được tạo bằng các migration trong `db/` ở bước deploy. Web app và
+crawler không tự chạy `CREATE TABLE`, `CREATE INDEX` hoặc `ALTER TABLE` trong
+runtime. Nếu schema còn thiếu, hãy dừng deploy, chạy migration rồi mới khởi động
+PM2/crawler.
+
+Các bảng crawler sử dụng gồm:
 
 - `crawler_sites`: config và trạng thái crawl của từng site.
 - `manga_titles`: title theo từng `site_key`.

@@ -29,47 +29,6 @@ type PhraseCacheRow = {
   model: string | null;
 };
 
-async function ensurePhraseTables() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS app_phrase_ai_cache (
-      id BIGSERIAL PRIMARY KEY,
-      phrase TEXT NOT NULL,
-      source_context TEXT NOT NULL DEFAULT '',
-      response JSONB NOT NULL,
-      model TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(
-    `CREATE UNIQUE INDEX IF NOT EXISTS app_phrase_ai_cache_phrase_context_idx
-     ON app_phrase_ai_cache (phrase, source_context)`
-  );
-  await pool.query(
-    `CREATE INDEX IF NOT EXISTS app_phrase_ai_cache_phrase_idx
-     ON app_phrase_ai_cache (phrase, updated_at DESC)`
-  );
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS app_flashcards (
-      id BIGSERIAL PRIMARY KEY,
-      user_id BIGINT REFERENCES app_users(id) ON DELETE CASCADE,
-      front TEXT NOT NULL,
-      back JSONB NOT NULL,
-      source_context TEXT,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  await pool.query(
-    `CREATE INDEX IF NOT EXISTS app_flashcards_user_id_idx
-     ON app_flashcards (user_id, created_at DESC)`
-  );
-  await pool.query(
-    `CREATE UNIQUE INDEX IF NOT EXISTS app_flashcards_user_front_idx
-     ON app_flashcards (user_id, front)`
-  );
-}
-
 function normalizeCachedAnalysis(value: unknown): PhraseAnalysis | null {
   if (!value || typeof value !== "object") return null;
   const parsed = value as Partial<PhraseAnalysis>;
@@ -137,7 +96,6 @@ export async function POST(request: Request) {
   }
 
   try {
-    await ensurePhraseTables();
     const selection = resolveImageAiSelection(body.provider, body.model);
 
     const contextKey = context || "";

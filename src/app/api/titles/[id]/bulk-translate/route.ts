@@ -1,4 +1,4 @@
-import { databaseDialect, pool } from "@/lib/db";
+import { pool } from "@/lib/db";
 import {
   getCachedImageTranslation,
   translateImageWithAi,
@@ -89,37 +89,6 @@ async function translateWithRetry(
   }
 }
 
-async function ensureJobTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS manga_ai_bulk_jobs (
-      manga_title_id BIGINT PRIMARY KEY,
-      status TEXT NOT NULL DEFAULT 'idle',
-      total_count INTEGER NOT NULL DEFAULT 0,
-      processed_count INTEGER NOT NULL DEFAULT 0,
-      translated_count INTEGER NOT NULL DEFAULT 0,
-      skipped_count INTEGER NOT NULL DEFAULT 0,
-      failed_count INTEGER NOT NULL DEFAULT 0,
-      error TEXT,
-      started_at TIMESTAMPTZ,
-      finished_at TIMESTAMPTZ,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-  if (databaseDialect === "mysql") {
-    await pool.query(
-      "ALTER TABLE manga_ai_bulk_jobs ADD COLUMN provider TEXT"
-    );
-    await pool.query("ALTER TABLE manga_ai_bulk_jobs ADD COLUMN model TEXT");
-  } else {
-    await pool.query(`
-      ALTER TABLE manga_ai_bulk_jobs
-        ADD COLUMN IF NOT EXISTS provider TEXT,
-        ADD COLUMN IF NOT EXISTS model TEXT
-    `);
-  }
-}
-
 async function getImageCounts(titleId: string) {
   const result = await pool.query<{
     total_count: number;
@@ -146,7 +115,6 @@ async function getJob(
   titleId: string,
   requestedSelection: ImageAiSelection = resolveImageAiSelection()
 ) {
-  await ensureJobTable();
   const result = await pool.query<JobRow>(
     `SELECT
        status,
@@ -616,7 +584,6 @@ export async function DELETE(
     );
   }
 
-  await ensureJobTable();
   stoppedJobs.add(id);
   const currentJob = await getJob(id);
   const selection = resolveImageAiSelection(
