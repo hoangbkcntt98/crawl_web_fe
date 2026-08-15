@@ -53,6 +53,10 @@ type Message = {
     saved?: boolean;
     value: PhraseAnalysis;
   };
+  ankiResult?: {
+    count: number;
+    words: AnkiWord[];
+  };
   error?: boolean;
 };
 
@@ -80,6 +84,23 @@ type PhraseResponse = {
   error?: string;
   phrase?: string;
   saved?: boolean;
+};
+
+type AnkiResponse = {
+  count?: number;
+  error?: string;
+  words?: AnkiWord[];
+};
+
+type AnkiWord = {
+  fields: {
+    Example1_Destination: string;
+    Example1_Source: string;
+    MeaningDestination: string;
+    Word: string;
+  };
+  part_of_speech: string;
+  word: string;
 };
 
 const MIN_IMAGE_SCALE = 1;
@@ -442,10 +463,65 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
     }
   };
 
-  const requestPhrase = async (action: "ask" | "card") => {
+  const requestPhrase = async (action: "ask" | "card" | "anki") => {
     if (!activePhrase || phraseLoading) return;
     const { context, phrase } = activePhrase;
+    if (action === "anki") {
+      await requestAnki(phrase, context);
+      return;
+    }
     await requestPhraseAction(action, phrase, context);
+  };
+
+  const requestAnki = async (phrase: string, context: string) => {
+    if (phraseLoading) return;
+    setPhraseLoading(true);
+    setActivePhrase(null);
+    setMessages((current) => [
+      ...current,
+      { id: Date.now(), role: "user", text: `Anki: ${phrase}` },
+    ]);
+
+    try {
+      const response = await fetch(apiPath("/api/anki"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          context,
+          phrase,
+          ...getSelectedAiRequest(),
+        }),
+      });
+      const result = (await response.json()) as AnkiResponse;
+      if (!response.ok || result.error || !result.words?.length) {
+        throw new Error(result.error || "Anki export failed.");
+      }
+      const savedWords = result.words;
+
+      setMessages((current) => [
+        ...current,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          ankiResult: {
+            count: result.count ?? savedWords.length,
+            words: savedWords,
+          },
+        },
+      ]);
+    } catch (error) {
+      setMessages((current) => [
+        ...current,
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          text: error instanceof Error ? error.message : "Anki export failed.",
+          error: true,
+        },
+      ]);
+    } finally {
+      setPhraseLoading(false);
+    }
   };
 
   const requestPhraseAction = async (
@@ -660,6 +736,14 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                               >
                                 Tạo Card (AI)
                               </button>
+                              <button
+                                className={styles.phraseAnkiButton}
+                                disabled={phraseLoading}
+                                onClick={() => void requestPhrase("anki")}
+                                type="button"
+                              >
+                                Anki
+                              </button>
                             </div>
                           ) : null}
                           {item.reading ? <small>{item.reading}</small> : null}
@@ -677,6 +761,34 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                           {message.translation.note}
                         </p>
                       ) : null}
+                    </div>
+                  ) : message.ankiResult ? (
+                    <div className={styles.ankiResult}>
+                      <strong>
+                        Đã lưu {message.ankiResult.count} từ vào Anki
+                      </strong>
+                      {message.ankiResult.words.map((item, index) => (
+                        <div
+                          className={styles.ankiResultItem}
+                          key={`${item.word}-${index}`}
+                        >
+                          <div>
+                            <span>Word</span>
+                            <b>{item.fields.Word || item.word}</b>
+                          </div>
+                          <div>
+                            <span>Meaning</span>
+                            <p>{item.fields.MeaningDestination || "—"}</p>
+                          </div>
+                          <div>
+                            <span>Example 1</span>
+                            <p>{item.fields.Example1_Source || "—"}</p>
+                            {item.fields.Example1_Destination ? (
+                              <small>{item.fields.Example1_Destination}</small>
+                            ) : null}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   ) : message.phraseAnalysis ? (
                     <PhraseAnalysisView

@@ -304,10 +304,16 @@
   font-weight: 900;
 }
 
-.phraseMenu button:last-child {
+.phraseMenu button:nth-child(2) {
   border-color: rgba(49, 214, 142, 0.36);
   background: rgba(26, 154, 103, 0.14);
   color: #89e4b9;
+}
+
+.phraseMenu .phraseAnkiButton {
+  border-color: rgba(190, 130, 255, 0.48);
+  background: rgba(128, 72, 210, 0.18);
+  color: #d5b4ff;
 }
 
 .phraseMenu button:disabled {
@@ -339,6 +345,52 @@
 .phraseAnalysis {
   display: grid;
   gap: 6px;
+}
+
+.ankiResult {
+  display: grid;
+  gap: 10px;
+}
+
+.ankiResult > strong {
+  color: #89e4b9;
+}
+
+.ankiResultItem {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid rgba(190, 130, 255, 0.3);
+  border-radius: 10px;
+  background: rgba(128, 72, 210, 0.1);
+}
+
+.ankiResultItem div {
+  display: grid;
+  gap: 3px;
+}
+
+.ankiResultItem span {
+  color: #9d8db2;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.ankiResultItem b {
+  color: #f0e7ff;
+  font-size: 20px;
+}
+
+.ankiResultItem p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.ankiResultItem small {
+  color: #aebbd0;
+  line-height: 1.45;
 }
 
 .phraseAnalysis strong,
