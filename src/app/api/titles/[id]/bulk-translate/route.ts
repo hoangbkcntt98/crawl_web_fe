@@ -1,4 +1,4 @@
-import { pool } from "@/lib/db";
+import { databaseDialect, pool } from "@/lib/db";
 import {
   getCachedImageTranslation,
   translateImageWithAi,
@@ -106,11 +106,18 @@ async function ensureJobTable() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await pool.query(`
-    ALTER TABLE manga_ai_bulk_jobs
-      ADD COLUMN IF NOT EXISTS provider TEXT,
-      ADD COLUMN IF NOT EXISTS model TEXT
-  `);
+  if (databaseDialect === "mysql") {
+    await pool.query(
+      "ALTER TABLE manga_ai_bulk_jobs ADD COLUMN provider TEXT"
+    );
+    await pool.query("ALTER TABLE manga_ai_bulk_jobs ADD COLUMN model TEXT");
+  } else {
+    await pool.query(`
+      ALTER TABLE manga_ai_bulk_jobs
+        ADD COLUMN IF NOT EXISTS provider TEXT,
+        ADD COLUMN IF NOT EXISTS model TEXT
+    `);
+  }
 }
 
 async function getImageCounts(titleId: string) {
@@ -242,7 +249,7 @@ async function getImagesToTranslate(titleId: string) {
      WHERE c.manga_title_id = $1
        AND (s.store_images_locally = FALSE OR i.local_path IS NOT NULL)
        AND r.id IS NULL
-     ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC, i.position ASC`,
+     ORDER BY (c.chapter_number IS NULL) ASC, c.chapter_number ASC, c.id ASC, i.position ASC`,
     [titleId]
   );
 

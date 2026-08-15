@@ -63,7 +63,7 @@ export default async function ReaderPage({
       `SELECT c.id, c.name, c.chapter_number
        FROM manga_chapters c
        WHERE c.manga_title_id = $1
-       ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC`,
+       ORDER BY (c.chapter_number IS NULL) ASC, c.chapter_number ASC, c.id ASC`,
       [chapter.manga_title_id]
     ),
     pool.query<ChapterImage>(
@@ -144,7 +144,7 @@ export default async function ReaderPage({
         {imagesResult.rows.length > 0 ? (
           <MangaAiReader
             images={imagesResult.rows.map((image, index) => ({
-              id: image.id,
+              id: String(image.id),
               src: chapter.store_images_locally
                 ? apiPath(`/api/images/${image.id}`)
                 : image.src,

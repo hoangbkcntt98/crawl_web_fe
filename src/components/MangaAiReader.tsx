@@ -282,7 +282,7 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
     { label: "OpenClaw - openclaw", model: "openclaw", provider: "openclaw" },
   ]);
   const [selectedAiModel, setSelectedAiModel] = useState(0);
-  const [openClawModel, setOpenClawModel] = useState("");
+  const [openClawModel, setOpenClawModel] = useState("openclaw");
   const [activePhrase, setActivePhrase] = useState<{
     context: string;
     phrase: string;
@@ -291,6 +291,9 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
 
   const checkedImage =
     images.find((image) => image.id === checkedImageId) ?? null;
+  const openClawModels = aiModels.filter(
+    (option) => option.provider === "openclaw"
+  );
 
   const getSelectedAiRequest = () => {
     const selectedModel = aiModels[selectedAiModel] ?? aiModels[0];
@@ -346,7 +349,15 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
             option.provider === result.defaultSelection?.provider &&
             option.model === result.defaultSelection?.model
         );
-        setSelectedAiModel(defaultIndex >= 0 ? defaultIndex : 0);
+        const nextIndex = defaultIndex >= 0 ? defaultIndex : 0;
+        const nextSelection = result.models[nextIndex];
+        setSelectedAiModel(nextIndex);
+        setOpenClawModel(
+          nextSelection?.provider === "openclaw"
+            ? nextSelection.model
+            : result.models.find((option) => option.provider === "openclaw")
+                ?.model || "openclaw"
+        );
       } catch {
         // The OpenClaw fallback remains available if config loading fails.
       }
@@ -690,8 +701,14 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                 </div>
               ))}
               {loading || phraseLoading ? (
-                <div className={`${styles.message} ${styles.aiMessage}`}>
-                  <span className={styles.typing}>AI is thinking</span>
+                <div
+                  aria-live="polite"
+                  className={`${styles.message} ${styles.aiMessage} ${styles.loadingMessage}`}
+                >
+                  <span aria-hidden="true" className={styles.spinner} />
+                  <span className={styles.typing}>
+                    {phraseLoading ? "AI is analyzing" : "AI is thinking"}
+                  </span>
                 </div>
               ) : null}
               <div ref={messagesEndRef} />
@@ -703,9 +720,14 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                 <select
                   aria-label="AI model"
                   disabled={loading || phraseLoading}
-                  onChange={(event) =>
-                    setSelectedAiModel(Number(event.target.value))
-                  }
+                  onChange={(event) => {
+                    const nextIndex = Number(event.target.value);
+                    const nextSelection = aiModels[nextIndex];
+                    setSelectedAiModel(nextIndex);
+                    if (nextSelection?.provider === "openclaw") {
+                      setOpenClawModel(nextSelection.model);
+                    }
+                  }}
                   value={selectedAiModel}
                 >
                   {aiModels.map((option, index) => (
@@ -720,16 +742,28 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
               </label>
               {aiModels[selectedAiModel]?.provider === "openclaw" ? (
                 <label className={styles.modelSelect}>
-                  <span>OpenClaw model (optional)</span>
-                  <input
-                    aria-label="Custom OpenClaw model"
+                  <span>OpenClaw model</span>
+                  <select
+                    aria-label="OpenClaw model"
                     disabled={loading || phraseLoading}
-                    maxLength={200}
-                    onChange={(event) => setOpenClawModel(event.target.value)}
-                    placeholder="Leave blank to use OPENCLAW_MODEL"
-                    type="text"
+                    onChange={(event) => {
+                      const nextModel = event.target.value;
+                      const nextIndex = aiModels.findIndex(
+                        (option) =>
+                          option.provider === "openclaw" &&
+                          option.model === nextModel
+                      );
+                      setOpenClawModel(nextModel);
+                      if (nextIndex >= 0) setSelectedAiModel(nextIndex);
+                    }}
                     value={openClawModel}
-                  />
+                  >
+                    {openClawModels.map((option) => (
+                      <option key={option.model} value={option.model}>
+                        {option.model}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               ) : null}
               <button
@@ -738,7 +772,14 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                 onClick={() => void requestAi("translate")}
                 type="button"
               >
-                Translate image
+                {loading ? (
+                  <>
+                    <span aria-hidden="true" className={styles.buttonSpinner} />
+                    Processing...
+                  </>
+                ) : (
+                  "Translate image"
+                )}
               </button>
             </div>
 
@@ -759,7 +800,11 @@ export default function MangaAiReader({ images }: { images: MangaImage[] }) {
                 value={input}
               />
               <button disabled={loading || phraseLoading || !input.trim()} type="submit">
-                Send
+                {loading ? (
+                  <span aria-label="Sending" className={styles.buttonSpinner} />
+                ) : (
+                  "Send"
+                )}
               </button>
             </form>
           </section>

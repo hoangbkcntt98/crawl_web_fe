@@ -1,7 +1,7 @@
 import { rm } from "fs/promises";
 import { after } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
-import { pool } from "@/lib/db";
+import { databaseDialect, pool } from "@/lib/db";
 import { buildEpubFile, getEpubChapterBatches } from "@/lib/epub";
 import {
   uploadEpubToGoogleDrive,
@@ -36,12 +36,17 @@ type ExportedFile = {
   viewUrl: string;
 };
 
+type ColumnRow = {
+  column_name: string;
+};
+
 const runningExports = new Set<string>();
+let jobTablePromise: Promise<void> | null = null;
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-async function ensureJobTable() {
+async function initializeJobTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS manga_epub_export_jobs (
       manga_title_id BIGINT PRIMARY KEY REFERENCES manga_titles(id) ON DELETE CASCADE,
@@ -61,18 +66,69 @@ async function ensureJobTable() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
-  await pool.query(`
-    ALTER TABLE manga_epub_export_jobs
-      ADD COLUMN IF NOT EXISTS current_page_count INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS current_page_total INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS exported_files JSONB NOT NULL DEFAULT '[]'::jsonb
-  `);
+  if (databaseDialect === "mysql") {
+    const columnResult = await pool.query<ColumnRow>(
+      `SELECT LOWER(COLUMN_NAME) AS column_name
+       FROM INFORMATION_SCHEMA.COLUMNS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'manga_epub_export_jobs'`
+    );
+    const columns = new Set(columnResult.rows.map((row) => row.column_name));
+    const missingColumns = [
+      [
+        "current_page_count",
+        "ADD COLUMN current_page_count INTEGER NOT NULL DEFAULT 0",
+      ],
+      [
+        "current_page_total",
+        "ADD COLUMN current_page_total INTEGER NOT NULL DEFAULT 0",
+      ],
+      [
+        "exported_files",
+        "ADD COLUMN exported_files JSON NOT NULL DEFAULT (JSON_ARRAY())",
+      ],
+    ] as const;
+
+    for (const [column, definition] of missingColumns) {
+      if (!columns.has(column)) {
+        await pool.query(`ALTER TABLE manga_epub_export_jobs ${definition}`);
+      }
+    }
+  } else {
+    await pool.query(`
+      ALTER TABLE manga_epub_export_jobs
+        ADD COLUMN IF NOT EXISTS current_page_count INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS current_page_total INTEGER NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS exported_files JSONB NOT NULL DEFAULT '[]'::jsonb
+    `);
+  }
+}
+
+async function ensureJobTable() {
+  jobTablePromise ??= initializeJobTable().catch((error) => {
+    jobTablePromise = null;
+    throw error;
+  });
+  await jobTablePromise;
 }
 
 function errorMessage(error: unknown) {
   if (!(error instanceof Error)) return "EPUB export failed";
   const cause = error.cause as { code?: string; message?: string } | undefined;
   return cause?.code ? `${error.message}: ${cause.code}` : error.message;
+}
+
+function exportedFiles(job: JobRow | null): ExportedFile[] {
+  const value = job?.exported_files;
+  if (Array.isArray(value)) return value;
+  if (typeof value !== "string") return [];
+
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? (parsed as ExportedFile[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 function jobResponse(job: JobRow | null) {
@@ -89,7 +145,7 @@ function jobResponse(job: JobRow | null) {
     fileSize: job?.file_size ? Number(job.file_size) : null,
     currentPageCount: job?.current_page_count ?? 0,
     currentPageTotal: job?.current_page_total ?? 0,
-    files: job?.exported_files ?? [],
+    files: exportedFiles(job),
     error: job?.error ?? null,
   });
 }

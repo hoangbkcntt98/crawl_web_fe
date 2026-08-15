@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { apiPath, appPath, routerPath } from "@/lib/paths";
+import { apiPath, routerPath } from "@/lib/paths";
 import styles from "./AuthForm.module.css";
 
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
@@ -49,7 +49,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   return (
     <main className={styles.page}>
       <section className={styles.card}>
-        <Link className={styles.logo} href={appPath("/")}>
+        <Link className={styles.logo} href="/">
           Manga<span>Rw</span>
         </Link>
         <h1>{isRegister ? "Create account" : "Login"}</h1>
@@ -68,7 +68,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
               minLength={3}
               maxLength={32}
               onChange={(event) => setUsername(event.target.value)}
-              pattern="[A-Za-z0-9_-]+"
+              pattern="[A-Za-z0-9_\-]+"
               required
               type="text"
               value={username}
@@ -97,11 +97,11 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         <div className={styles.switchMode}>
           {isRegister ? (
             <>
-              Already have an account? <Link href={appPath("/login")}>Login</Link>
+              Already have an account? <Link href="/login">Login</Link>
             </>
           ) : (
             <>
-              No account yet? <Link href={appPath("/register")}>Register</Link>
+              No account yet? <Link href="/register">Register</Link>
             </>
           )}
         </div>

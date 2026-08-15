@@ -31,6 +31,19 @@ type ExportJob = {
   message?: string;
 };
 
+async function readExportResponse(response: Response): Promise<ExportJob> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as ExportJob;
+  } catch {
+    throw new Error(
+      response.ok
+        ? "EPUB service returned an invalid response"
+        : `EPUB service returned HTTP ${response.status}`
+    );
+  }
+}
+
 export default function EpubExportButton({ titleId }: { titleId: string }) {
   const [job, setJob] = useState<ExportJob>({ status: "idle" });
   const [loading, setLoading] = useState(true);
@@ -46,7 +59,7 @@ export default function EpubExportButton({ titleId }: { titleId: string }) {
           cache: "no-store",
           signal: controller.signal,
         });
-        const data = (await response.json()) as ExportJob;
+        const data = await readExportResponse(response);
         if (!response.ok) {
           throw new Error(data.message || "Could not load EPUB status");
         }
@@ -77,7 +90,7 @@ export default function EpubExportButton({ titleId }: { titleId: string }) {
     async function pollStatus() {
       try {
         const response = await fetch(endpoint, { cache: "no-store" });
-        const data = (await response.json()) as ExportJob;
+        const data = await readExportResponse(response);
         if (!response.ok) {
           throw new Error(data.message || "Could not load EPUB status");
         }
@@ -105,7 +118,7 @@ export default function EpubExportButton({ titleId }: { titleId: string }) {
     setJob({ status: "running", phase: "building", processedCount: 0 });
     try {
       const response = await fetch(endpoint, { method: "POST" });
-      const data = (await response.json()) as ExportJob;
+      const data = await readExportResponse(response);
       if (!response.ok) throw new Error(data.message || "EPUB export failed");
       setJob(data);
     } catch (error) {
@@ -134,7 +147,7 @@ export default function EpubExportButton({ titleId }: { titleId: string }) {
             ? "Export again"
             : "Export EPUB to Drive";
   const files =
-    job.files?.length
+    Array.isArray(job.files) && job.files.length
       ? job.files
       : job.status === "completed" && job.viewUrl
         ? [

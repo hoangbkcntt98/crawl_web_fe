@@ -409,6 +409,33 @@
   animation: dots 1.2s steps(4, end) infinite;
 }
 
+.loadingMessage {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.spinner,
+.buttonSpinner {
+  display: inline-block;
+  flex: 0 0 auto;
+  border: 2px solid rgba(131, 173, 255, 0.28);
+  border-top-color: #83adff;
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.buttonSpinner {
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+}
+
 .actions {
   display: grid;
   gap: 8px;
@@ -459,6 +486,10 @@
   color: #83adff;
   cursor: pointer;
   font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .composer {

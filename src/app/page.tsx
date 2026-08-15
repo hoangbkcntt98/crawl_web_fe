@@ -1,4 +1,4 @@
-import { pool } from "@/lib/db";
+import { databaseDialect, ensureLibraryIndexes, pool } from "@/lib/db";
 import { reconcileStoppedCrawlers } from "@/lib/crawler";
 import CrawlButton from "@/components/CrawlButton";
 import HomeHeaderActions from "@/components/HomeHeaderActions";
@@ -93,7 +93,7 @@ export default async function Home({ searchParams }: HomeProps) {
   const { page, q, filter, chapters, site, sort } = await searchParams;
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  await reconcileStoppedCrawlers();
+  await Promise.all([reconcileStoppedCrawlers(), ensureLibraryIndexes()]);
   const rawSite = Array.isArray(site) ? site[0] : site;
   const selectedSite = rawSite?.trim() ?? "";
   const sitesResult = await pool.query<CrawlerSite>(
@@ -135,19 +135,26 @@ export default async function Home({ searchParams }: HomeProps) {
   const query = rawQuery?.trim() ?? "";
   const searchPattern = `%${query}%`;
   const normalizedSearchPattern = `%${normalizeSearchText(query)}%`;
+  const titleSearchCondition =
+    databaseDialect === "mysql"
+      ? `($2 = '' OR LOWER(m.title) LIKE LOWER($3))`
+      : `(
+          $2 = ''
+          OR m.title ILIKE $3
+          OR translate(lower(m.title), $4, $5) LIKE $6
+        )`;
   const countResult = await pool.query<{ total: number }>(
     `SELECT COUNT(DISTINCT m.id)::int AS total
      FROM manga_titles m
      LEFT JOIN manga_details d ON d.manga_title_id = m.id
-     LEFT JOIN manga_chapters c ON c.manga_title_id = m.id
      WHERE m.site_key = $1
-       AND (
-         $2 = ''
-         OR m.title ILIKE $3
-         OR translate(lower(m.title), $4, $5) LIKE $6
-       )
+       AND ${titleSearchCondition}
        AND ($7::boolean = false OR d.images_crawled_at IS NOT NULL)
-       AND ($8::boolean = false OR c.id IS NOT NULL)`,
+       AND ($8::boolean = false OR EXISTS (
+         SELECT 1
+         FROM manga_chapters existing_c
+         WHERE existing_c.manga_title_id = m.id
+       ))`,
     [
       selectedSite,
       query,
@@ -175,8 +182,8 @@ export default async function Home({ searchParams }: HomeProps) {
         d.images_crawled_at,
         COALESCE(d.crawl_status, 'idle') AS crawl_status,
         COUNT(c.id)::int AS chapter_count,
-        COUNT(c.id) FILTER (
-          WHERE EXISTS (
+        SUM(CASE
+          WHEN c.id IS NOT NULL AND EXISTS (
             SELECT 1
             FROM chapter_images i
             WHERE i.chapter_id = c.id
@@ -184,8 +191,8 @@ export default async function Home({ searchParams }: HomeProps) {
                 s.store_images_locally = FALSE
                 OR i.local_path IS NOT NULL
               )
-          )
-        )::int AS crawled_chapter_count,
+          ) THEN 1 ELSE 0
+        END)::int AS crawled_chapter_count,
         (
           SELECT h.chapter_id::text
           FROM reading_history h
@@ -213,11 +220,7 @@ export default async function Home({ searchParams }: HomeProps) {
       LEFT JOIN manga_details d ON d.manga_title_id = m.id
       LEFT JOIN manga_chapters c ON c.manga_title_id = m.id
       WHERE m.site_key = $1
-        AND (
-          $2 = ''
-          OR m.title ILIKE $3
-          OR translate(lower(m.title), $4, $5) LIKE $6
-        )
+        AND ${titleSearchCondition}
         AND ($7::boolean = false OR d.images_crawled_at IS NOT NULL)
         AND ($8::boolean = false OR EXISTS (
           SELECT 1 FROM manga_chapters existing_c

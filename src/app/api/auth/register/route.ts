@@ -40,7 +40,15 @@ export async function POST(request: Request) {
     return Response.json({ ok: true, user });
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    if (message.includes("duplicate key")) {
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? String(error.code)
+        : "";
+    if (
+      code === "23505" ||
+      code === "ER_DUP_ENTRY" ||
+      message.toLowerCase().includes("duplicate")
+    ) {
       return Response.json(
         { ok: false, message: "Username is already registered." },
         { status: 409 }

@@ -209,7 +209,7 @@ async function loadMangaPages(titleId: string, chapterIds: string[]) {
        WHERE c.manga_title_id = $1
          AND c.id = ANY($2::bigint[])
          AND (s.store_images_locally = FALSE OR i.local_path IS NOT NULL)
-       ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC, i.position ASC`,
+       ORDER BY (c.chapter_number IS NULL) ASC, c.chapter_number ASC, c.id ASC, i.position ASC`,
       [titleId, chapterIds]
     ),
   ]);
@@ -238,7 +238,7 @@ export async function getEpubChapterBatches(
          WHERE i.chapter_id = c.id
            AND (s.store_images_locally = FALSE OR i.local_path IS NOT NULL)
        )
-     ORDER BY c.chapter_number ASC NULLS LAST, c.id ASC`,
+     ORDER BY (c.chapter_number IS NULL) ASC, c.chapter_number ASC, c.id ASC`,
     [titleId]
   );
 
@@ -320,13 +320,18 @@ export async function buildEpubFile(
 
       let type = imageType(contentType, row.src);
       if (type.mediaType === "image/webp" || type.mediaType === "image/avif") {
-        imageBuffer = await sharp(imageBuffer)
-          .jpeg({ quality: 90, mozjpeg: true })
-          .toBuffer();
-        type = { extension: "jpg", mediaType: "image/jpeg" };
+        try {
+          imageBuffer = await sharp(imageBuffer, { failOn: "none" })
+            .jpeg({ quality: 90, mozjpeg: true })
+            .toBuffer();
+          type = { extension: "jpg", mediaType: "image/jpeg" };
+        } catch {
+          await onProgress?.(index + 1, pages.length);
+          continue;
+        }
       }
 
-      const pageId = String(index + 1).padStart(6, "0");
+      const pageId = String(epubPages.length + 1).padStart(6, "0");
       const page: EpubPage = {
         id: pageId,
         chapterId: row.chapter_id,

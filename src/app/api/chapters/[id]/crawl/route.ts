@@ -13,9 +13,11 @@ async function getChapter(id: string) {
     `SELECT
        c.name,
        m.site_key,
-       COUNT(i.id) FILTER (
-         WHERE s.store_images_locally = FALSE OR i.local_path IS NOT NULL
-       )::int AS image_count,
+       SUM(CASE
+         WHEN i.id IS NOT NULL
+          AND (s.store_images_locally = FALSE OR i.local_path IS NOT NULL)
+         THEN 1 ELSE 0
+       END)::int AS image_count,
        c.crawled_at,
        s.crawl_status AS site_crawl_status,
        s.crawl_error AS site_crawl_error

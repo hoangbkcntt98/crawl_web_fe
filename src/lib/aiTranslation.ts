@@ -96,6 +96,16 @@ export function parseLooseJson<T = unknown>(text: string): T {
   }
 }
 
+function normalizeOpenClawBaseUrl() {
+  const configured =
+    process.env.OPENCLAW_BASE_URL?.trim() || "http://openclaw:20128";
+  const withProtocol = /^https?:\/\//i.test(configured)
+    ? configured
+    : `http://${configured}`;
+
+  return withProtocol.replace(/\/+$/, "").replace(/\/v1$/i, "");
+}
+
 export async function getAiImage(imageId: string) {
   const imageResult = await pool.query<ImageRecord>(
     `SELECT
@@ -132,7 +142,11 @@ export async function getCachedImageTranslation(
     [imageId, model ?? null]
   );
 
-  return cachedResult.rows[0]?.response ?? null;
+  const response = cachedResult.rows[0]?.response ?? null;
+  if (typeof response === "string") {
+    return parseLooseJson<ApiResponse>(response);
+  }
+  return response;
 }
 
 export async function requestOpenClaw({
@@ -148,10 +162,9 @@ export async function requestOpenClaw({
   requestUrl: string;
   translate: boolean;
 }) {
-  const apiKey = process.env.OPENCLAW_API_KEY;
-  const baseUrl = (
-    process.env.OPENCLAW_BASE_URL || "http://openclaw:20128"
-  ).replace(/\/+$/, "");
+  const apiKey =
+    process.env.OPENCLAW_API_KEY || process.env.ROUTER_API_KEY;
+  const baseUrl = normalizeOpenClawBaseUrl();
   const model = requestedModel || process.env.OPENCLAW_MODEL || "openclaw";
 
   if (!apiKey) {
@@ -322,10 +335,9 @@ export async function requestOpenClawText({
   responseFormatJson?: boolean;
   temperature?: number;
 }) {
-  const apiKey = process.env.OPENCLAW_API_KEY;
-  const baseUrl = (
-    process.env.OPENCLAW_BASE_URL || "http://openclaw:20128"
-  ).replace(/\/+$/, "");
+  const apiKey =
+    process.env.OPENCLAW_API_KEY || process.env.ROUTER_API_KEY;
+  const baseUrl = normalizeOpenClawBaseUrl();
   const model = requestedModel || process.env.OPENCLAW_MODEL || "openclaw";
 
   if (!apiKey) {

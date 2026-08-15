@@ -1,7 +1,7 @@
 import { randomBytes, scrypt, timingSafeEqual, createHash } from "crypto";
 import { promisify } from "util";
 import { cookies } from "next/headers";
-import { pool } from "@/lib/db";
+import { databaseDialect, pool } from "@/lib/db";
 import { AUTH_COOKIE_NAME } from "@/lib/authConstants";
 
 const scryptAsync = promisify(scrypt);
@@ -19,7 +19,23 @@ export type CurrentUser = {
   username: string;
 };
 
-export async function ensureAuthTables() {
+type IndexCountRow = {
+  total: number;
+};
+
+let authTablesPromise: Promise<void> | null = null;
+
+async function initializeAuthTables() {
+  if (databaseDialect === "mysql") {
+    const existingTables = await pool.query<IndexCountRow>(
+      `SELECT COUNT(*) AS total
+       FROM INFORMATION_SCHEMA.TABLES
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME IN ('app_users', 'app_sessions')`
+    );
+    if (Number(existingTables.rows[0]?.total ?? 0) === 2) return;
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS app_users (
       id BIGSERIAL PRIMARY KEY,
@@ -43,6 +59,31 @@ export async function ensureAuthTables() {
   await pool.query(
     "CREATE INDEX IF NOT EXISTS app_sessions_expires_at_idx ON app_sessions(expires_at)"
   );
+
+  if (databaseDialect === "mysql") {
+    const usernameIndex = await pool.query<IndexCountRow>(
+      `SELECT COUNT(*) AS total
+       FROM INFORMATION_SCHEMA.STATISTICS
+       WHERE TABLE_SCHEMA = DATABASE()
+         AND TABLE_NAME = 'app_users'
+         AND COLUMN_NAME = 'username'
+         AND NON_UNIQUE = 0`
+    );
+    if (Number(usernameIndex.rows[0]?.total ?? 0) === 0) {
+      await pool.query(
+        "ALTER TABLE app_users ADD UNIQUE INDEX app_users_username_key (username)"
+      );
+    }
+  }
+
+}
+
+export async function ensureAuthTables() {
+  authTablesPromise ??= initializeAuthTables().catch((error) => {
+    authTablesPromise = null;
+    throw error;
+  });
+  await authTablesPromise;
 }
 
 export function normalizeUsername(username: string) {
@@ -134,14 +175,40 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 export async function createUser(username: string, password: string) {
   await ensureAuthTables();
   const passwordHash = await hashPassword(password);
-  const result = await pool.query<CurrentUser>(
-    `INSERT INTO app_users (username, password_hash)
-     VALUES ($1, $2)
-     RETURNING id::text, username`,
-    [username, passwordHash]
-  );
-
-  return result.rows[0];
+  if (databaseDialect === "mysql") {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const latestUser = await client.query<{ id: string }>(
+        `SELECT id
+         FROM app_users
+         ORDER BY id DESC
+         LIMIT 1
+         FOR UPDATE`
+      );
+      const nextId = BigInt(latestUser.rows[0]?.id ?? 0) + BigInt(1);
+      await client.query(
+        `INSERT INTO app_users (id, username, password_hash)
+         VALUES ($1, $2, $3)`,
+        [nextId.toString(), username, passwordHash]
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
+  } else {
+    await pool.query(
+      `INSERT INTO app_users (username, password_hash)
+       VALUES ($1, $2)`,
+      [username, passwordHash]
+    );
+  }
+  const user = await findUserByUsername(username);
+  if (!user) throw new Error("User was created but could not be loaded");
+  return { id: user.id, username: user.username };
 }
 
 export async function findUserByUsername(username: string) {

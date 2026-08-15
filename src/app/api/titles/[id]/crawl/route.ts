@@ -14,8 +14,8 @@ async function getProgress(id: string) {
        COALESCE(d.crawl_status, 'idle') AS status,
        d.crawl_error AS error,
        COUNT(c.id)::int AS total,
-       COUNT(c.id) FILTER (
-         WHERE EXISTS (
+       SUM(CASE
+         WHEN c.id IS NOT NULL AND EXISTS (
            SELECT 1
            FROM chapter_images i
            WHERE i.chapter_id = c.id
@@ -23,8 +23,8 @@ async function getProgress(id: string) {
                s.store_images_locally = FALSE
                OR i.local_path IS NOT NULL
              )
-         )
-       )::int AS crawled
+         ) THEN 1 ELSE 0
+       END)::int AS crawled
      FROM manga_titles m
      JOIN crawler_sites s ON s.site_key = m.site_key
      LEFT JOIN manga_details d ON d.manga_title_id = m.id

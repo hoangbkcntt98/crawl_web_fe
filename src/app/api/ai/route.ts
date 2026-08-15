@@ -12,13 +12,13 @@ import { resolveImageAiSelection } from "@/lib/aiModels";
 type AiRequest =
   | {
       action: "translate";
-      imageId: string;
+      imageId: string | number;
       model?: string;
       provider?: string;
     }
   | {
       action: "chat";
-      imageId: string;
+      imageId: string | number;
       message: string;
       model?: string;
       provider?: string;
@@ -36,10 +36,10 @@ export async function POST(request: Request) {
     );
   }
 
+  const imageId = String(body.imageId ?? "");
   if (
     (body.action !== "translate" && body.action !== "chat") ||
-    typeof body.imageId !== "string" ||
-    !/^\d+$/.test(body.imageId)
+    !/^\d+$/.test(imageId)
   ) {
     return NextResponse.json(
       { error: "画像または操作が正しくありません。" },
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const image = await getAiImage(body.imageId);
+  const image = await getAiImage(imageId);
   if (!image) {
     return NextResponse.json(
       { error: "この画像は見つかりませんでした。" },
