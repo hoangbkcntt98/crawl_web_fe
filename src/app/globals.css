@@ -17,9 +17,9 @@ html, body { margin: 0; min-height: 100%; }
 }
 .theme-toggle:hover { background: rgba(255,255,255,.12); }
 
-html[data-theme="light"] body { background: #f3f6fb; color: #1c2738; }
+html[data-theme="light"] body { background: #f8fafd; color: #1c2738; }
 html[data-theme="light"] .theme-toggle { border-color: #d4dce8; background: #fff; color: #40516a; }
-html[data-theme="light"] main[class*="page"] { background: #f3f6fb !important; color: #1c2738 !important; }
+html[data-theme="light"] main[class*="page"] { background: #f8fafd !important; color: #1c2738 !important; }
 html[data-theme="light"] header[class*="header"] { background: rgba(255,255,255,.92) !important; border-color: #dfe6ef !important; }
 html[data-theme="light"] input, html[data-theme="light"] select { background: #fff !important; color: #1c2738 !important; border-color: #cbd6e4 !important; }
 html[data-theme="light"] [class*="mangaCard"], html[data-theme="light"] [class*="panel"], html[data-theme="light"] [class*="listToolbar"] { background: #fff !important; color: #1c2738 !important; border-color: #dce4ee !important; box-shadow: 0 6px 18px rgba(36,55,80,.07) !important; }
