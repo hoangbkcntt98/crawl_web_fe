@@ -21,7 +21,7 @@ jobs:
         run: |
           set -e
 
-          cd /var/www/my-app
+          cd /home/opc/manga-web
 
           git fetch origin
           git reset --hard origin/main
