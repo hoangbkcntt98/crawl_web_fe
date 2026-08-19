@@ -24,14 +24,14 @@ jobs:
           cd /home/opc/manga-web
 
           git fetch origin
-          git reset --hard origin/main
+          git reset --hard origin/develop
           npm run build
 
           echo "Fetching source..."
           git fetch origin
 
           echo "Updating source..."
-          git reset --hard origin/main
+          git reset --hard origin/develop
 
           echo "Building application..."
           docker compose build
