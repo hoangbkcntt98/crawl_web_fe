@@ -32,14 +32,3 @@ jobs:
 
           echo "Updating source..."
           git reset --hard origin/develop
-
-          echo "Building application..."
-          docker compose build
-
-          echo "Starting application..."
-          docker compose up -d
-
-          echo "Cleaning unused images..."
-          docker image prune -f
-
-          echo "Deployment completed"
