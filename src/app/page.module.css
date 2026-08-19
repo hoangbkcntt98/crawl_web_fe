@@ -33,7 +33,7 @@
 .lastReadLink {
   display: block;
   min-height: 18px;
-  margin: 0 5px 8px;
+  margin: 0 14px 8px;
   display: block;
   overflow: hidden;
   color: #f3c879;
@@ -444,7 +444,7 @@
   }
 
   .lastReadLink {
-    margin: 0 5px 6px;
+    margin: 0 14px 6px;
     font-size: 9px;
   }
 
