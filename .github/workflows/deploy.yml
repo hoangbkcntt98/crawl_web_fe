@@ -1,0 +1,45 @@
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on:
+      - self-hosted
+      # - production
+
+    steps:
+      - name: Deploy application
+        shell: bash
+        run: |
+          set -e
+
+          cd /var/www/my-app
+
+          git fetch origin
+          git reset --hard origin/main
+          npm run build
+
+          echo "Fetching source..."
+          git fetch origin
+
+          echo "Updating source..."
+          git reset --hard origin/main
+
+          echo "Building application..."
+          docker compose build
+
+          echo "Starting application..."
+          docker compose up -d
+
+          echo "Cleaning unused images..."
+          docker image prune -f
+
+          echo "Deployment completed"
