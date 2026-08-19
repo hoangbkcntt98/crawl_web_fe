@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { apiPath, appPath } from "@/lib/paths";
+import ThemeToggle from "./ThemeToggle";
 import styles from "./HomeHeaderActions.module.css";
 
 export default function HomeHeaderActions({
@@ -57,6 +58,8 @@ export default function HomeHeaderActions({
           type="search"
         />
       </form>
+
+      <ThemeToggle />
 
       <div className={styles.desktopProfile}>
         {username ? <span>{username}</span> : null}
