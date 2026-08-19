@@ -6,7 +6,7 @@ on:
       - develop
 
 concurrency:
-  group: production
+  group: Default
   cancel-in-progress: false
 
 jobs:
