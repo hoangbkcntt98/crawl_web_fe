@@ -405,7 +405,7 @@
 
   .titleCrawlAction {
     min-height: 32px;
-    padding: 7px 14px 0;
+    padding: 7px 0 0;
     gap: 5px;
   }
 
@@ -444,7 +444,7 @@
   }
 
   .lastReadLink {
-    margin: 0 0 6px;
+    margin: 0 14px 6px;
     font-size: 9px;
   }
 
