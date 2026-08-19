@@ -560,7 +560,7 @@ export default async function Home({ searchParams }: HomeProps) {
                     </span>
                   </div>
 
-                  <div className={styles.cardBody} style={{ padding: 12 }}>
+                  <div className={styles.cardBody} style={{ padding: "14px 14px 12px" }}>
                     <h3
                       className={styles.mangaTitle}
                       style={{
@@ -569,7 +569,11 @@ export default async function Home({ searchParams }: HomeProps) {
                         lineHeight: 1.45,
                         fontWeight: 800,
                         color: "#f3f6fb",
-                        minHeight: 44,
+                        minHeight: 22,
+                        height: 22,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                       }}
                     >
                       {item.title}
@@ -603,9 +607,11 @@ export default async function Home({ searchParams }: HomeProps) {
                         : undefined
                     }
                   >
-                    続きを読む: {item.last_read_chapter_name ?? "前回のチャプター"}
+                    続き: {item.last_read_chapter_name ?? "前回のチャプター"}
                   </Link>
-                ) : null}
+                ) : (
+                  <span className={styles.lastReadLink}>未読</span>
+                )}
 
                 <TitleCrawlButton
                   className={styles.titleCrawlAction}

@@ -18,11 +18,10 @@
 }
 
 .mangaTitle {
-  display: -webkit-box;
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  white-space: nowrap;
 }
 
 .cardLink {
@@ -32,7 +31,9 @@
 }
 
 .lastReadLink {
-  margin: 0 12px 8px;
+  display: block;
+  min-height: 18px;
+  margin: 0 14px 8px;
   display: block;
   overflow: hidden;
   color: #f3c879;
