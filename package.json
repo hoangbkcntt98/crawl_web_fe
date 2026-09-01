@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build && pm2 restart manga-web",
     "seed": "node scripts/seed.mjs",
-    "start": "next start -H 0.0.0.0 -p 3000",
+    "start": "next start -H 127.0.0.1 -p ${PORT:-3000}",
     "lint": "eslint"
   },
   "dependencies": {
