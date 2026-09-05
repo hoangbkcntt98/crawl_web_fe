@@ -104,9 +104,30 @@ export async function POST(
     crawler.once("error", (error) => {
       void pool.query(
         `UPDATE crawler_sites
-         SET crawl_status = 'failed', crawl_error = $1, updated_at = NOW()
-         WHERE site_key = $2`,
+         SET crawl_status = 'failed',
+             crawl_error = $1,
+             crawler_pid = NULL,
+             crawl_started_at = NULL,
+             updated_at = NOW()
+         WHERE site_key = $2 AND crawl_status = 'crawling'`,
         [error.message, chapter.site_key]
+      );
+    });
+    crawler.once("exit", (code, signal) => {
+      if (code === 0) return;
+
+      const reason = signal
+        ? `Crawler stopped by signal ${signal}`
+        : `Crawler exited with code ${code}`;
+      void pool.query(
+        `UPDATE crawler_sites
+         SET crawl_status = 'failed',
+             crawl_error = COALESCE(crawl_error, $1),
+             crawler_pid = NULL,
+             crawl_started_at = NULL,
+             updated_at = NOW()
+         WHERE site_key = $2 AND crawl_status = 'crawling'`,
+        [reason, chapter.site_key]
       );
     });
 
@@ -121,6 +142,16 @@ export async function POST(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Could not crawl chapter";
+    await pool.query(
+      `UPDATE crawler_sites
+       SET crawl_status = 'failed',
+           crawl_error = $1,
+           crawler_pid = NULL,
+           crawl_started_at = NULL,
+           updated_at = NOW()
+       WHERE site_key = $2 AND crawl_status = 'crawling'`,
+      [message, chapter.site_key]
+    );
     return Response.json({ ok: false, message }, { status: 500 });
   }
 }

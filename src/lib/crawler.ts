@@ -69,4 +69,23 @@ export async function reconcileStoppedCrawlers() {
       [site.site_key]
     );
   }
+
+  // A title crawl shares the site's crawler process. If that process has
+  // already failed, make sure title rows do not remain stuck in "crawling"
+  // (which would leave the title action buttons disabled indefinitely).
+  await pool.query(
+    `UPDATE manga_details d
+     SET crawl_status = 'failed',
+         crawl_error = COALESCE(
+           d.crawl_error,
+           s.crawl_error,
+           'Crawler process stopped unexpectedly'
+         ),
+         updated_at = NOW()
+     FROM manga_titles m
+     JOIN crawler_sites s ON s.site_key = m.site_key
+     WHERE d.manga_title_id = m.id
+       AND d.crawl_status = 'crawling'
+       AND s.crawl_status = 'failed'`
+  );
 }

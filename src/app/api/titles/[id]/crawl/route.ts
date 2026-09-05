@@ -133,6 +133,21 @@ export async function POST(
         [error.message, id]
       );
     });
+    crawler.once("exit", (code, signal) => {
+      if (code === 0) return;
+
+      const reason = signal
+        ? `Crawler stopped by signal ${signal}`
+        : `Crawler exited with code ${code}`;
+      void pool.query(
+        `UPDATE manga_details
+         SET crawl_status = 'failed',
+             crawl_error = COALESCE(crawl_error, $1),
+             updated_at = NOW()
+         WHERE manga_title_id = $2 AND crawl_status = 'crawling'`,
+        [reason, id]
+      );
+    });
     const progress = await getProgress(id);
 
     return Response.json({
@@ -145,6 +160,12 @@ export async function POST(
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Could not crawl title";
+    await pool.query(
+      `UPDATE manga_details
+       SET crawl_status = 'failed', crawl_error = $1, updated_at = NOW()
+       WHERE manga_title_id = $2 AND crawl_status = 'crawling'`,
+      [message, id]
+    );
     return Response.json({ ok: false, message }, { status: 500 });
   }
 }

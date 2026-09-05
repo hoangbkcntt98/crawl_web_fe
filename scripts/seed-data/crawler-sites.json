@@ -128,10 +128,10 @@
     "local_image_storage_path": null,
     "config": {
       "site_key": "nettruyen-base",
-      "base_url": "https://nettruyen.fit",
+      "base_url": "https://nettruyen.ad",
       "list": {
-        "url": "https://nettruyen.fit/truyen-tranh-con-trai",
-        "page_url_format": "https://nettruyen.fit/truyen-tranh-con-trai?page={page}",
+        "url": "https://nettruyen.ad/truyen-tranh-con-trai",
+        "page_url_format": "https://nettruyen.ad/truyen-tranh-con-trai?page={page}",
         "pagination_selector": "#ctl00_mainContent_ctl00_divPager .pagination a, .pagination a",
         "item_selector": ".ModuleContent .items .row .item figure.clearfix",
         "href": { "selector": ".image a[href*='/truyen-tranh/']", "attr": "href", "absolute_url": true },
@@ -158,7 +158,13 @@
       },
       "reader": {
         "image_selector": ".reading-detail.box_doc .page-chapter img, .reading-detail .page-chapter img",
-        "image_attrs": ["data-src", "data-original", "data-lazy-src", "src"]
+        "image_attrs": ["data-src", "data-original", "data-lazy-src", "src"],
+        "image_url_replacements": [
+          {
+            "source": "images.truyenonline.cc",
+            "target": "sv1.otruyencdn.com"
+          }
+        ]
       }
     }
   },
